@@ -1,4 +1,16 @@
+<div align="center">
+
 # Aillive Code
+
+<img src="docs/assets/aillive-code-terminal.png" alt="Aillive Code interactive terminal" width="920" />
+
+**Aillive Code: a terminal AI assistant for chat, agents, APIs, and project work.**
+
+[中文](README.zh.md) | English
+
+[Website](https://www.aillive.xyz) | [Docs](https://www.aillive.xyz/docs/) | [GitHub](https://github.com/amine123max/Aillive-Code)
+
+</div>
 
 Aillive Code is a standalone npm CLI for Aillive. It brings Aillive chat, project context, OpenAI-compatible APIs, OpenClaw tasks, usage queries, local sessions, and a polished terminal interface into one command.
 

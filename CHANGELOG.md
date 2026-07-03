@@ -9,3 +9,4 @@
 - Stored auth and config under `~/.aillive`, including `~/.aillive/auth.json`.
 - Added Node test coverage, local API mocks, npx tarball smoke test, and GitHub Actions CI.
 - Added real rendered terminal screenshot asset for GitHub and npm README pages.
+- Added bilingual README entry points and Website/Docs/GitHub links.
