@@ -42,11 +42,17 @@ jobs:
       - name: Syntax check
         run: npm run check:syntax
 
+      - name: Release metadata check
+        run: npm run check:release
+
       - name: Unit tests
         run: npm test
 
-      - name: npx tarball smoke
-        run: npm run smoke:npx
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Pack smoke
+        run: npm run pack:smoke
 
       - name: Pack dry-run
         run: npm run pack:dry

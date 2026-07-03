@@ -1,0 +1,136 @@
+export const COMMAND_MODULES = [
+  { name: 'auth', group: 'Platform', summary: 'Login, import, status, path, and logout commands' },
+  { name: 'login', group: 'Start', summary: 'Shortcut for auth login' },
+  { name: 'logout', group: 'Start', summary: 'Shortcut for auth logout' },
+  { name: 'status', group: 'Start', summary: 'Show local auth, project, and usage status' },
+  { name: 'home', group: 'Start', summary: 'Show or open the local ~/.aillive directory' },
+  { name: 'setup', group: 'Start', summary: 'Configure local Aillive profile' },
+  { name: 'install', group: 'Start', summary: 'Print install commands' },
+  { name: 'config', group: 'Platform', summary: 'Manage local config' },
+  { name: 'interactive', group: 'Start', summary: 'Open interactive terminal' },
+  { name: 'ask', group: 'AI', summary: 'Alias for chat' },
+  { name: 'chat', group: 'AI', summary: 'Send a chat completion request' },
+  { name: 'run', group: 'AI', summary: 'Run a project-aware task' },
+  { name: 'agent', group: 'AI', summary: 'Plan, run, verify, and resume agent tasks' },
+  { name: 'models', group: 'AI', summary: 'List Aillive models' },
+  { name: 'init', group: 'Project', summary: 'Create project context' },
+  { name: 'context', group: 'Project', summary: 'Inspect project context' },
+  { name: 'session', group: 'Project', summary: 'Manage local sessions' },
+  { name: 'stats', group: 'Project', summary: 'Show local CLI statistics' },
+  { name: 'runtime', group: 'Architecture', summary: 'Show runtime readiness' },
+  { name: 'provider', group: 'Architecture', summary: 'Show provider readiness' },
+  { name: 'mcp', group: 'Architecture', summary: 'Show and call MCP tools' },
+  { name: 'lsp', group: 'Architecture', summary: 'Show LSP readiness' },
+  { name: 'git', group: 'Architecture', summary: 'Show Git status, diff, and checkpoint' },
+  { name: 'memory', group: 'Architecture', summary: 'Show and search local memory' },
+  { name: 'openclaw', group: 'Platform', summary: 'Run Aillive OpenClaw tasks' },
+  { name: 'usage', group: 'Platform', summary: 'Query account usage' },
+  { name: 'admin', group: 'Platform', summary: 'Run local admin maintenance' },
+  { name: 'doctor', group: 'Start', summary: 'Check local config and API readiness' },
+  { name: 'completions', group: 'Platform', summary: 'Print shell completion scripts' },
+  { name: 'upgrade', group: 'Platform', summary: 'Print upgrade command' },
+]
+
+export const COMMAND_GROUPS = [
+  {
+    title: 'Start',
+    commands: [
+      ['aillive', 'Open interactive AI terminal'],
+      ['aillive interactive', 'Open interactive AI terminal explicitly'],
+      ['aillive setup', 'Configure API key, base URL, and default model'],
+      ['aillive login', 'Shortcut for auth login'],
+      ['aillive status', 'Show local auth, project, and usage status'],
+      ['aillive home', 'Show or open the local ~/.aillive directory'],
+      ['aillive auth login', 'Open browser login and save ~/.aillive/auth.json'],
+      ['aillive auth import auth.json', 'Import a downloaded auth.json file'],
+      ['aillive install', 'Print terminal install commands'],
+      ['aillive doctor', 'Check local config and API availability'],
+    ],
+  },
+  {
+    title: 'AI',
+    commands: [
+      ['aillive ask "prompt"', 'Alias for chat'],
+      ['aillive chat "prompt"', 'Send a chat completion request'],
+      ['aillive chat --stream "prompt"', 'Stream the answer in the terminal'],
+      ['aillive run --project "task"', 'Run a task with ~/.aillive project context'],
+      ['aillive agent plan "task"', 'Preview an offline agent plan'],
+      ['aillive agent run "task"', 'Run an offline agent task with checkpoint memory'],
+      ['aillive agent verify', 'Run syntax, tests, and pack smoke verification'],
+      ['aillive agent resume [id]', 'Resume from an agent checkpoint summary'],
+      ['aillive models', 'List available Aillive models'],
+    ],
+  },
+  {
+    title: 'Project',
+    commands: [
+      ['aillive init', 'Create project context under ~/.aillive/projects'],
+      ['aillive context status', 'Check project context availability'],
+      ['aillive context show', 'Print the stored project context'],
+      ['aillive session list', 'Show local CLI sessions'],
+      ['aillive stats', 'Show local CLI usage statistics'],
+    ],
+  },
+  {
+    title: 'Platform',
+    commands: [
+      ['aillive openclaw run "task"', 'Run an Aillive OpenClaw task'],
+      ['aillive usage', 'Query account usage summary'],
+      ['aillive admin promote <email>', 'Promote an existing local user to admin'],
+      ['aillive auth path', 'Print the local auth.json path'],
+      ['aillive config list', 'Show local CLI config'],
+      ['aillive completions powershell', 'Print shell completion script'],
+    ],
+  },
+  {
+    title: 'Architecture',
+    commands: [
+      ['aillive runtime status', 'Show agent runtime and subsystem readiness'],
+      ['aillive provider status', 'Show provider configuration and auth readiness'],
+      ['aillive mcp status', 'Show MCP configuration status'],
+      ['aillive mcp call echo', 'Call an Aillive MCP tool'],
+      ['aillive lsp status', 'Show language server discovery status'],
+      ['aillive git status', 'Show Git repository status'],
+      ['aillive git diff --summary', 'Show read-only Git diff summary'],
+      ['aillive git checkpoint', 'Show read-only Git checkpoint metadata'],
+      ['aillive memory status', 'Show local memory stores and counts'],
+      ['aillive memory search <query>', 'Search local memory records'],
+    ],
+  },
+]
+
+export const SLASH_COMMAND_GROUPS = [
+  {
+    title: 'Session',
+    commands: [
+      ['/help', 'Show this command palette'],
+      ['/status', 'Show auth, model, project, and local paths'],
+      ['/clear', 'Clear the current conversation memory'],
+      ['/exit', 'Leave interactive mode'],
+    ],
+  },
+  {
+    title: 'Identity',
+    commands: [
+      ['/login', 'Browser login, then import ~/.aillive/auth.json'],
+      ['/doctor', 'Check local config and API readiness'],
+      ['/usage', 'Fetch account usage'],
+    ],
+  },
+  {
+    title: 'Model',
+    commands: [
+      ['/model', 'Show the active model'],
+      ['/models', 'Fetch available models from the server'],
+    ],
+  },
+  {
+    title: 'Project',
+    commands: [
+      ['/context', 'Show project context status'],
+      ['/context on', 'Attach ~/.aillive project context in this session'],
+      ['/context off', 'Detach project context in this session'],
+      ['/sessions', 'Show local CLI sessions'],
+    ],
+  },
+]

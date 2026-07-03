@@ -10,12 +10,51 @@ export const PROJECT_DIR_NAME = '.aillive'
 export const PROJECT_CONTEXT_FILE = 'project.md'
 export const MAX_PROJECT_CONTEXT_CHARS = 12000
 
+export const cliErrorCodes = {
+  AUTH_REQUIRED: 'AUTH_REQUIRED',
+  API_REQUEST_FAILED: 'API_REQUEST_FAILED',
+  CONFIG_INVALID: 'CONFIG_INVALID',
+  SUBSYSTEM_UNAVAILABLE: 'SUBSYSTEM_UNAVAILABLE',
+  COMMAND_USAGE: 'COMMAND_USAGE',
+}
+
+export class AilliveCliError extends Error {
+  constructor(code, message, options = {}) {
+    super(message)
+    this.name = 'AilliveCliError'
+    this.code = code || cliErrorCodes.COMMAND_USAGE
+    this.status = Number(options.status || 1)
+    this.detail = options.detail || null
+  }
+}
+
 export function describePackage() {
   return {
     name: packageName,
     role: packageRole,
     status: 'active',
   }
+}
+
+export function createCliError(code, message, options = {}) {
+  return new AilliveCliError(code, message, options)
+}
+
+export function errorToJson(error) {
+  return {
+    ok: false,
+    error: {
+      code: error?.code || cliErrorCodes.COMMAND_USAGE,
+      message: error?.message || 'Command failed.',
+      ...(error?.detail ? { detail: error.detail } : {}),
+    },
+  }
+}
+
+export function detectOutputMode(options = {}, env = process.env) {
+  const json = Boolean(options.json || env.AILLIVE_OUTPUT === 'json')
+  const color = Boolean(options.color !== false && env.NO_COLOR === undefined && !json)
+  return { json, color }
 }
 
 export function resolveAillivePaths(home = process.env.AILLIVE_HOME) {
@@ -66,6 +105,9 @@ export function parseArgv(argv) {
     system: '',
     cwd: '',
     dataDir: '',
+    offline: false,
+    trace: false,
+    verify: false,
   }
   const positionals = []
 
@@ -126,6 +168,15 @@ export function parseArgv(argv) {
       case '--open':
         global.open = true
         break
+      case '--offline':
+        global.offline = true
+        break
+      case '--trace':
+        global.trace = true
+        break
+      case '--verify':
+        global.verify = true
+        break
       case '--from':
         global.from = nextValue()
         break
@@ -172,4 +223,43 @@ export function authHeaders(apiKey) {
 export function maskSecret(value) {
   const text = String(value || '')
   return text ? `${text.slice(0, 8)}...${text.slice(-6)}` : ''
+}
+
+export function stripAnsi(value) {
+  return String(value ?? '').replace(/\x1b\[[0-9;]*m/g, '')
+}
+
+export function colorize(text, code, enabled = true) {
+  return enabled ? `\x1b[${code}m${text}\x1b[0m` : String(text)
+}
+
+export function formatKeyValueRows(rows = []) {
+  const normalized = rows.map((row) => ({
+    key: String(row.key ?? row[0] ?? ''),
+    value: String(row.value ?? row[1] ?? ''),
+  }))
+  const width = Math.max(0, ...normalized.map((row) => row.key.length))
+  return normalized.map((row) => `${row.key.padEnd(width)}  ${row.value}`).join('\n')
+}
+
+export function formatPanel(title, lines = []) {
+  const body = Array.isArray(lines) ? lines : [lines]
+  return [`[${title}]`, ...body.map((line) => String(line))].join('\n')
+}
+
+export function normalizeAuthPayload(payload = {}, fallback = {}) {
+  const apiKey = String(payload.apiKey || payload.key || payload.secret || payload.token || '').trim()
+  if (!apiKey) {
+    throw createCliError(cliErrorCodes.CONFIG_INVALID, 'auth.json must include apiKey.')
+  }
+  return {
+    type: 'aillive_cli_auth',
+    version: 1,
+    apiKey,
+    baseUrl: normalizeBaseUrl(payload.baseUrl || fallback.baseUrl || DEFAULT_BASE_URL),
+    profile: payload.profile || fallback.profile || null,
+    source: payload.source || fallback.source || 'auth.json',
+    createdAt: payload.createdAt || fallback.createdAt || new Date().toISOString(),
+    importedAt: payload.importedAt || new Date().toISOString(),
+  }
 }

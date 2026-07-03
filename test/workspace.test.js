@@ -16,19 +16,29 @@ test('root package declares workspace CLI architecture', async () => {
   assert.equal(pkg.bin.aillive, './apps/cli/src/index.js')
   assert.equal(pkg.bin['aillive-code'], './apps/cli/src/index.js')
   assert.equal(pkg.files.includes('apps/cli/src'), true)
-  assert.equal(pkg.files.includes('packages'), true)
+  assert.equal(pkg.files.includes('packages/*/src/**'), true)
+  assert.equal(pkg.files.includes('packages/*/package.json'), true)
+})
+
+test('root package exposes release gate scripts', async () => {
+  const pkg = await readJson('package.json')
+  assert.equal(pkg.scripts['check:release'], 'node ./scripts/check-release.mjs')
+  assert.equal(pkg.scripts['pack:smoke'], 'node ./scripts/pack-smoke.mjs')
+  assert.equal(pkg.scripts['smoke:npx'], 'npm run pack:smoke')
+  assert.match(pkg.scripts['publish:check'], /npm run check:release/)
+  assert.match(pkg.scripts['publish:check'], /npm run pack:smoke/)
 })
 
 test('internal package skeletons expose metadata', async () => {
   const packageDirs = [
     ['packages/core', '@aillive/core', 'active'],
     ['packages/tui', '@aillive/tui', 'active'],
-    ['packages/provider', '@aillive/provider', 'skeleton'],
-    ['packages/mcp', '@aillive/mcp', 'skeleton'],
-    ['packages/lsp', '@aillive/lsp', 'skeleton'],
-    ['packages/git', '@aillive/git', 'skeleton'],
+    ['packages/provider', '@aillive/provider', 'active'],
+    ['packages/mcp', '@aillive/mcp', 'active'],
+    ['packages/lsp', '@aillive/lsp', 'active'],
+    ['packages/git', '@aillive/git', 'active'],
     ['packages/memory', '@aillive/memory', 'active'],
-    ['packages/agent-runtime', '@aillive/agent-runtime', 'skeleton'],
+    ['packages/agent-runtime', '@aillive/agent-runtime', 'active'],
   ]
 
   for (const [dir, name, status] of packageDirs) {

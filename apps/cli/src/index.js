@@ -12,8 +12,8 @@ import {
   PROJECT_CONTEXT_FILE,
   PROJECT_DIR_NAME,
   VERSION,
-  authHeaders,
   ensureDir,
+  errorToJson,
   maskSecret,
   normalizeBaseUrl,
   parseArgv,
@@ -22,18 +22,39 @@ import {
   safeParseJson,
   writeJsonFile,
 } from '../../../packages/core/src/index.js'
-import { getRuntimeStatus } from '../../../packages/agent-runtime/src/index.js'
-import { getProviderStatus } from '../../../packages/provider/src/index.js'
-import { getMcpStatus } from '../../../packages/mcp/src/index.js'
+import {
+  defaultVerificationCommands,
+  getRuntimeStatus,
+  planAgentTask,
+  resumeAgentRun,
+  runCommandVerifications,
+  runAgentTask,
+} from '../../../packages/agent-runtime/src/index.js'
+import {
+  checkProviderStatus,
+  createChatCompletion,
+  extractContent,
+  getProviderStatus,
+  listModels,
+  loadUsage,
+  runOpenClawTask,
+  streamChatCompletion,
+} from '../../../packages/provider/src/index.js'
+import { callMcpTool, connectMcpServers, createMockMcpServer, getMcpStatus, readMcpConfig } from '../../../packages/mcp/src/index.js'
 import { getLspStatus } from '../../../packages/lsp/src/index.js'
-import { getGitStatus } from '../../../packages/git/src/index.js'
+import { getGitCheckpoint, getGitDiffSummary, getGitStatus } from '../../../packages/git/src/index.js'
 import {
   getMemoryStatus,
+  appendTaskTrace as appendStoredTaskTrace,
+  readMemoryTier as readStoredMemoryTier,
+  readCheckpoint as readStoredCheckpoint,
   readProjectContext as readStoredProjectContext,
   readSessions as readStoredSessions,
   readStats as readStoredStats,
   recordSession as recordStoredSession,
   recordStats as recordStoredStats,
+  resolveMemoryFiles,
+  writeCheckpoint as writeStoredCheckpoint,
   writeSessions as writeStoredSessions,
 } from '../../../packages/memory/src/index.js'
 import {
@@ -58,9 +79,11 @@ import {
   visibleLength,
   wordmarkForWidth,
 } from '../../../packages/tui/src/index.js'
+import { COMMAND_GROUPS, COMMAND_MODULES, SLASH_COMMAND_GROUPS } from './commands/index.js'
 
 export { DEFAULT_BASE_URL, VERSION, parseArgv }
 export { formatElapsed, wordmarkForWidth }
+export { COMMAND_MODULES, SLASH_COMMAND_GROUPS }
 
 const AILLIVE_PATHS = resolveAillivePaths(process.env.AILLIVE_HOME)
 const CONFIG_DIR = AILLIVE_PATHS.configDir
@@ -70,98 +93,11 @@ const SESSIONS_DIR = AILLIVE_PATHS.sessionsDir
 const SESSIONS_FILE = AILLIVE_PATHS.sessionsFile
 const STATS_FILE = AILLIVE_PATHS.statsFile
 const PROJECTS_DIR = AILLIVE_PATHS.projectsDir
+const MEMORY_FILES = resolveMemoryFiles(CONFIG_DIR)
+const CHECKPOINTS_FILE = MEMORY_FILES.checkpointsFile
+const TRACES_FILE = MEMORY_FILES.tracesFile
 
-const TOP_LEVEL_COMMANDS = [
-  'auth',
-  'login',
-  'logout',
-  'status',
-  'home',
-  'setup',
-  'install',
-  'config',
-  'interactive',
-  'ask',
-  'chat',
-  'run',
-  'models',
-  'init',
-  'context',
-  'session',
-  'stats',
-  'runtime',
-  'provider',
-  'mcp',
-  'lsp',
-  'git',
-  'memory',
-  'openclaw',
-  'usage',
-  'admin',
-  'doctor',
-  'completions',
-  'upgrade',
-]
-
-const COMMAND_GROUPS = [
-  {
-    title: 'Start',
-    commands: [
-      ['aillive', 'Open interactive AI terminal'],
-      ['aillive interactive', 'Open interactive AI terminal explicitly'],
-      ['aillive setup', 'Configure API key, base URL, and default model'],
-      ['aillive login', 'Shortcut for auth login'],
-      ['aillive status', 'Show local auth, project, and usage status'],
-      ['aillive home', 'Show or open the local ~/.aillive directory'],
-      ['aillive auth login', 'Open browser login and save ~/.aillive/auth.json'],
-      ['aillive auth import auth.json', 'Import a downloaded auth.json file'],
-      ['aillive install', 'Print terminal install commands'],
-      ['aillive doctor', 'Check local config and API availability'],
-    ],
-  },
-  {
-    title: 'AI',
-    commands: [
-      ['aillive ask "prompt"', 'Alias for chat'],
-      ['aillive chat "prompt"', 'Send a chat completion request'],
-      ['aillive chat --stream "prompt"', 'Stream the answer in the terminal'],
-      ['aillive run --project "task"', 'Run a task with ~/.aillive project context'],
-      ['aillive models', 'List available Aillive models'],
-    ],
-  },
-  {
-    title: 'Project',
-    commands: [
-      ['aillive init', 'Create project context under ~/.aillive/projects'],
-      ['aillive context status', 'Check project context availability'],
-      ['aillive context show', 'Print the stored project context'],
-      ['aillive session list', 'Show local CLI sessions'],
-      ['aillive stats', 'Show local CLI usage statistics'],
-    ],
-  },
-  {
-    title: 'Platform',
-    commands: [
-      ['aillive openclaw run "task"', 'Run an Aillive OpenClaw task'],
-      ['aillive usage', 'Query account usage summary'],
-      ['aillive admin promote <email>', 'Promote an existing local user to admin'],
-      ['aillive auth path', 'Print the local auth.json path'],
-      ['aillive config list', 'Show local CLI config'],
-      ['aillive completions powershell', 'Print shell completion script'],
-    ],
-  },
-  {
-    title: 'Architecture',
-    commands: [
-      ['aillive runtime status', 'Show agent runtime and subsystem readiness'],
-      ['aillive provider status', 'Show provider configuration and auth readiness'],
-      ['aillive mcp status', 'Show MCP configuration status'],
-      ['aillive lsp status', 'Show language server discovery status'],
-      ['aillive git status', 'Show Git repository status'],
-      ['aillive memory status', 'Show local memory stores and counts'],
-    ],
-  },
-]
+const TOP_LEVEL_COMMANDS = COMMAND_MODULES.map((item) => item.name)
 
 function printMiniSection(title, rows, rt = {}) {
   if (rt.json) return
@@ -193,34 +129,12 @@ function printInteractiveHelp(rt = {}) {
   if (rt.json) return
   const useColor = canUseColor(rt.color)
   const width = Math.min(terminalWidth(), 104)
-  const groups = [
-    ['Session', [
-      ['/help', 'Show this command palette'],
-      ['/status', 'Show auth, model, project, and local paths'],
-      ['/clear', 'Clear the current conversation memory'],
-      ['/exit', 'Leave interactive mode'],
-    ]],
-    ['Identity', [
-      ['/login', 'Browser login, then import ~/.aillive/auth.json'],
-      ['/doctor', 'Check local config and API readiness'],
-      ['/usage', 'Fetch account usage'],
-    ]],
-    ['Model', [
-      ['/model', 'Show the active model'],
-      ['/models', 'Fetch available models from the server'],
-    ]],
-    ['Project', [
-      ['/context', 'Show project context status'],
-      ['/context on', 'Attach ~/.aillive project context in this session'],
-      ['/context off', 'Detach project context in this session'],
-      ['/sessions', 'Show local CLI sessions'],
-    ]],
-  ]
   console.log('')
   console.log(color.bold('Command Palette', useColor))
   console.log(color.gray('Type a slash command in the prompt. The request login flow only starts when an API action needs it.', useColor))
   console.log(color.gray(rule(width, '-'), useColor))
-  for (const [title, commands] of groups) {
+  for (const group of SLASH_COMMAND_GROUPS) {
+    const { title, commands } = group
     console.log(color.bold(title, useColor))
     for (const [command, description] of commands) {
       console.log(`  ${color.cyan(command.padEnd(12), useColor)} ${description}`)
@@ -296,6 +210,9 @@ export function buildHelp(enabled = true) {
   sections.push('  --cwd <dir>         Run with a different project directory')
   sections.push('  --data-dir <dir>    Data directory for local admin maintenance commands')
   sections.push('  --open              Open local folders in the system file manager')
+  sections.push('  --offline           Prefer local fake-provider runtime paths')
+  sections.push('  --trace             Include trace events where supported')
+  sections.push('  --verify            Run configured verification hooks where supported')
   sections.push('  --json              Print JSON output')
   sections.push('  --no-color          Disable ANSI colors')
   sections.push('  -h, --help          Show help')
@@ -448,10 +365,6 @@ async function runtime(global) {
   }
 }
 
-function apiRoot(baseUrl) {
-  return baseUrl.replace(/\/v1$/i, '')
-}
-
 function projectStorageKey(cwd = process.cwd()) {
   const resolved = path.resolve(cwd)
   const normalized = process.platform === 'win32' ? resolved.toLowerCase() : resolved
@@ -491,20 +404,6 @@ async function buildSystemContext(rt, taskMode = false) {
     parts.push(`Project context from ${project.path}:\n\n${project.content}`)
   }
   return { content: parts.join('\n\n'), project }
-}
-
-async function requestJson(url, options = {}) {
-  const response = await fetch(url, options)
-  const text = await response.text()
-  const json = text ? safeParseJson(text) : {}
-  if (!response.ok) {
-    const message = json?.error?.message || json?.message || text || `HTTP_${response.status}`
-    const error = new Error(message)
-    error.status = response.status
-    error.payload = json || text
-    throw error
-  }
-  return json
 }
 
 function webOriginFromBaseUrl(baseUrl) {
@@ -777,7 +676,7 @@ async function cmdConfig(parsed) {
 
 async function cmdModels(parsed) {
   const rt = await ensureAuthForRequest(await runtime(parsed.global), 'models')
-  const data = await withSpinner('Loading models...', rt, () => requestJson(`${rt.baseUrl}/models`, { headers: authHeaders(rt.apiKey) }))
+  const data = await withSpinner('Loading models...', rt, () => listModels(rt))
   const rows = (data.data || []).map((model) => ({
     id: model.id,
     label: model.label || '',
@@ -827,11 +726,7 @@ async function cmdChat(parsed, taskMode = false) {
     if (!rt.json) printPanel('Aillive', '', rt)
     content = await streamChat(rt, body)
   } else {
-    const data = await withSpinner('Thinking...', rt, () => requestJson(`${rt.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: authHeaders(rt.apiKey),
-      body: JSON.stringify(body),
-    }))
+    const data = await withSpinner('Thinking...', rt, () => createChatCompletion({ ...rt, body }))
     content = extractContent(data)
     rt.json ? printJson(data) : printPanel('Aillive', content || '(empty response)', rt)
   }
@@ -841,58 +736,29 @@ async function cmdChat(parsed, taskMode = false) {
 
 async function streamChat(rt, body, options = {}) {
   let firstOutput = false
+  let wroteOutput = false
   const markOutput = () => {
     if (firstOutput) return
     firstOutput = true
     if (typeof options.onFirstOutput === 'function') options.onFirstOutput()
   }
-  const response = await fetch(`${rt.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: authHeaders(rt.apiKey),
-    body: JSON.stringify(body),
+  const content = await streamChatCompletion({
+    ...rt,
+    body,
+    onFirstOutput: markOutput,
+    onReplace: (value) => {
+      if (wroteOutput) process.stdout.write('\n')
+      process.stdout.write(value)
+      wroteOutput = Boolean(value)
+    },
+    onDelta: (delta) => {
+      process.stdout.write(delta)
+      wroteOutput = true
+    },
   })
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(safeParseJson(text)?.error?.message || text || `HTTP_${response.status}`)
-  }
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let content = ''
-  for await (const chunk of response.body) {
-    buffer += decoder.decode(chunk, { stream: true })
-    const parts = buffer.split(/\n\n|\n/)
-    buffer = parts.pop() || ''
-    for (const part of parts) {
-      const text = part.replace(/^data:\s*/gm, '').trim()
-      if (!text || text === '[DONE]') continue
-      const json = safeParseJson(text)
-      if (json?.type === 'error') throw new Error(json.message || 'STREAM_ERROR')
-      if (json?.type === 'replace_content' && json.content) {
-        markOutput()
-        if (content) process.stdout.write('\n')
-        content = String(json.content)
-        process.stdout.write(content)
-        continue
-      }
-      const delta = json?.delta || json?.content || json?.choices?.[0]?.delta?.content || json?.choices?.[0]?.message?.content || ''
-      if (delta) {
-        markOutput()
-        content += delta
-        process.stdout.write(delta)
-      }
-    }
-  }
   if (!firstOutput && typeof options.onFirstOutput === 'function') options.onFirstOutput()
   if (content) process.stdout.write('\n')
   return content
-}
-
-function extractContent(data) {
-  return data?.choices?.[0]?.message?.content
-    || data?.choices?.[0]?.text
-    || data?.content
-    || data?.response
-    || ''
 }
 
 async function cmdInit(parsed) {
@@ -1036,6 +902,18 @@ async function recordStats(command, latencyMs, ok) {
   await recordStoredStats(STATS_FILE, command, latencyMs, ok)
 }
 
+async function writeAgentCheckpoint(checkpoint) {
+  return writeStoredCheckpoint(CHECKPOINTS_FILE, checkpoint, 100)
+}
+
+async function readAgentCheckpoint(id = 'latest') {
+  return readStoredCheckpoint(CHECKPOINTS_FILE, id)
+}
+
+async function appendAgentTrace(event) {
+  return appendStoredTaskTrace(TRACES_FILE, event, 500)
+}
+
 async function cmdStats(parsed) {
   const data = await readStats()
   if (parsed.global.json) return printJson(data)
@@ -1099,6 +977,18 @@ async function cmdStatus(parsed) {
   const contextFile = projectContextPath(rt.cwd)
   const contextStatus = await readProjectContext({ ...rt, project: true })
   const contextExists = contextStatus.exists
+  const [mcp, lsp, git, memory] = await Promise.all([
+    getMcpStatus({ home: CONFIG_DIR }),
+    getLspStatus({ cwd: rt.cwd }),
+    getGitStatus({ cwd: rt.cwd }),
+    getMemoryStatus({
+      home: CONFIG_DIR,
+      sessionsFile: SESSIONS_FILE,
+      statsFile: STATS_FILE,
+      projectContextPath: contextFile,
+    }),
+  ])
+  const provider = getProviderStatus({ baseUrl: rt.baseUrl, apiKey: rt.apiKey, model: rt.model })
   const payload = {
     authenticated: Boolean(rt.apiKey),
     apiKeySource: rt.authSource,
@@ -1119,6 +1009,13 @@ async function cmdStatus(parsed) {
       failed: stats.failed || 0,
       lastUsedAt: stats.lastUsedAt || '',
     },
+    subsystems: {
+      provider,
+      mcp,
+      lsp,
+      git,
+      memory,
+    },
   }
   if (rt.json) return printJson(payload)
   printBrand(rt, 'Aillive Status')
@@ -1130,6 +1027,11 @@ async function cmdStatus(parsed) {
     { item: 'project', state: contextExists ? statusMark(true, rt.color) : color.gray('NONE', canUseColor(rt.color)), detail: `${payload.projectContext.path}${rt.project ? ' (enabled)' : ' (off)'}` },
     { item: 'sessions', state: statusMark(true, rt.color), detail: String(payload.sessions) },
     { item: 'local stats', state: statusMark(true, rt.color), detail: `${payload.stats.total} commands, ${payload.stats.failed} failed` },
+    { item: 'provider', state: provider.status, detail: statusDetail(provider) },
+    { item: 'mcp', state: mcp.status, detail: statusDetail(mcp) },
+    { item: 'lsp', state: lsp.status, detail: statusDetail(lsp) },
+    { item: 'git', state: git.status, detail: statusDetail(git) },
+    { item: 'memory', state: memory.status, detail: statusDetail(memory) },
   ], ['item', 'state', 'detail'])
   console.log('')
   console.log(payload.authenticated
@@ -1138,7 +1040,7 @@ async function cmdStatus(parsed) {
 }
 
 async function collectArchitectureStatuses(rt) {
-  const provider = getProviderStatus({ baseUrl: rt.baseUrl, apiKey: rt.apiKey, model: rt.model })
+  const provider = await checkProviderStatus({ baseUrl: rt.baseUrl, apiKey: rt.apiKey, model: rt.model })
   const mcp = await getMcpStatus({ home: CONFIG_DIR })
   const lsp = await getLspStatus({ cwd: rt.cwd })
   const git = await getGitStatus({ cwd: rt.cwd })
@@ -1154,7 +1056,11 @@ async function collectArchitectureStatuses(rt) {
 
 function statusDetail(payload) {
   if (payload.component === 'provider') {
-    return `${payload.baseUrl || '(missing base URL)'} · ${payload.authenticated ? 'auth ok' : 'auth missing'} · ${payload.model}`
+    const modelCheck = payload.models
+      ? (payload.models.ok ? ` · ${payload.models.count} models` : ` · models failed: ${payload.models.error}`)
+      : ''
+    const hint = payload.remediationHint ? ` · ${payload.remediationHint}` : ''
+    return `${payload.baseUrl || '(missing base URL)'} · ${payload.authenticated ? 'auth ok' : 'auth missing'} · ${payload.model}${modelCheck}${hint}`
   }
   if (payload.component === 'mcp') {
     return `${payload.configPath || '(no config path)'} · ${payload.servers?.length || 0} servers`
@@ -1168,7 +1074,7 @@ function statusDetail(payload) {
     return `${payload.branch} · ${payload.changedFiles} changed files`
   }
   if (payload.component === 'memory') {
-    return `${payload.home} · ${payload.counts?.sessions || 0} sessions · ${payload.counts?.commands || 0} commands`
+    return `${payload.home} · ${payload.counts?.sessions || 0} sessions · ${payload.counts?.checkpoints || 0} checkpoints · ${payload.storageBytes || 0} bytes`
   }
   if (payload.component === 'runtime') {
     return `${payload.subsystems?.length || 0} subsystems · ${payload.readyForAgentRun ? 'ready' : 'partial'}`
@@ -1206,20 +1112,87 @@ function architectureUsage(command) {
   const usage = {
     runtime: 'Usage: aillive runtime status',
     provider: 'Usage: aillive provider status',
-    mcp: 'Usage: aillive mcp status|list',
+    mcp: 'Usage: aillive mcp status|list|call <tool> [json]',
     lsp: 'Usage: aillive lsp status',
-    git: 'Usage: aillive git status',
-    memory: 'Usage: aillive memory status',
+    git: 'Usage: aillive git status|diff --summary|checkpoint',
+    memory: 'Usage: aillive memory status|search <query>',
   }
   return usage[command] || 'Usage: aillive runtime|provider|mcp|lsp|git|memory status'
 }
 
+function builtinMcpServers() {
+  return [
+    createMockMcpServer({
+      id: 'builtin',
+      tools: {
+        echo: {
+          description: 'Echo args for offline MCP smoke tests',
+          risk: 'read',
+          execute: (args) => JSON.stringify(args),
+        },
+      },
+    }),
+  ]
+}
+
+async function loadMcpServers() {
+  const loaded = await readMcpConfig({ home: CONFIG_DIR })
+  return [
+    ...connectMcpServers(loaded.config),
+    ...builtinMcpServers(),
+  ]
+}
+
 async function cmdArchitecture(parsed, command) {
   const action = parsed.subcommand || 'status'
-  if (action !== 'status' && !(command === 'mcp' && action === 'list')) {
+  const allowed = action === 'status'
+    || (command === 'mcp' && ['list', 'call'].includes(action))
+    || (command === 'git' && ['diff', 'checkpoint'].includes(action))
+    || (command === 'memory' && action === 'search')
+  if (!allowed) {
     throw new Error(architectureUsage(command))
   }
   const rt = await runtime(parsed.global)
+  if (command === 'mcp' && action === 'call') {
+    const name = parsed.rest[0] || ''
+    if (!name) throw new Error(architectureUsage(command))
+    const argsText = parsed.rest.slice(1).join(' ').trim()
+    const args = argsText ? (safeParseJson(argsText) || { input: argsText }) : {}
+    const result = await callMcpTool({
+      servers: await loadMcpServers(),
+      name,
+      args,
+      confirmed: parsed.global.force,
+    })
+    return rt.json ? printJson(result) : printPanel('MCP Tool Result', result.output, rt)
+  }
+  if (command === 'git' && action === 'diff') {
+    const payload = await getGitDiffSummary({ cwd: rt.cwd })
+    return printArchitectureStatus('Aillive Git Diff', payload, rt)
+  }
+  if (command === 'git' && action === 'checkpoint') {
+    const payload = await getGitCheckpoint({ cwd: rt.cwd })
+    return printArchitectureStatus('Aillive Git Checkpoint', payload, rt)
+  }
+  if (command === 'memory' && action === 'search') {
+    const query = parsed.rest.join(' ').trim()
+    if (!query) throw new Error(architectureUsage(command))
+    const { searchMemory } = await import('../../../packages/memory/src/index.js')
+    const payload = {
+      component: 'memory',
+      status: 'available',
+      query,
+      results: await searchMemory(query, {
+        home: CONFIG_DIR,
+        sessionsFile: SESSIONS_FILE,
+        checkpointsFile: CHECKPOINTS_FILE,
+        tracesFile: TRACES_FILE,
+        projectContextPath: projectContextPath(rt.cwd),
+        legacyProjectContextPath: legacyProjectContextPath(rt.cwd),
+      }),
+    }
+    return rt.json ? printJson(payload) : printTable(payload.results, ['tier', 'id', 'text'])
+  }
   const statuses = await collectArchitectureStatuses(rt)
   const payload = statuses[command]
   if (command === 'mcp' && action === 'list') {
@@ -1235,6 +1208,108 @@ async function cmdArchitecture(parsed, command) {
     memory: 'Aillive Memory',
   }[command]
   return printArchitectureStatus(title, payload, rt)
+}
+
+async function cmdAgent(parsed) {
+  const action = parsed.subcommand || 'plan'
+  const rt = await runtime(parsed.global)
+  if (action === 'plan') {
+    const objective = parsed.rest.join(' ').trim()
+    if (!objective) throw new Error('Usage: aillive agent plan "task"')
+    const plan = planAgentTask(objective, { mode: 'plan', network: 'disabled', tools: 'disabled' })
+    if (rt.json) return printJson(plan)
+    printBrand(rt, 'Aillive Agent Plan')
+    printPanel('Objective', plan.objective, rt)
+    return printTable(plan.steps.map((step) => ({
+      id: step.id,
+      status: step.status,
+      title: step.title,
+    })), ['id', 'status', 'title'])
+  }
+  if (action === 'verify') {
+    const started = Date.now()
+    const verification = await runCommandVerifications(defaultVerificationCommands, { cwd: rt.cwd })
+    await recordStats('agent:verify', Date.now() - started, verification.every((item) => item.ok))
+    const payload = {
+      ok: verification.every((item) => item.ok),
+      verification,
+    }
+    if (!payload.ok) process.exitCode = 1
+    if (rt.json) return printJson(payload)
+    printBrand(rt, 'Aillive Agent Verify')
+    printTable(verification.map((item) => ({
+      check: item.name,
+      ok: item.ok ? 'yes' : 'no',
+      durationMs: item.durationMs,
+      detail: item.detail,
+    })), ['check', 'ok', 'durationMs', 'detail'])
+    return
+  }
+  if (action === 'run') {
+    const objective = parsed.rest.join(' ').trim()
+    if (!objective) throw new Error('Usage: aillive agent run "task"')
+    const started = Date.now()
+    const [project, git, lsp] = await Promise.all([
+      readProjectContext(rt),
+      getGitStatus({ cwd: rt.cwd }),
+      getLspStatus({ cwd: rt.cwd }),
+    ])
+    const result = await runAgentTask({
+      objective,
+      context: { project, git, lsp },
+      verificationHooks: parsed.global.verify
+        ? defaultVerificationCommands.map((command) => async () => (await runCommandVerifications([command], { cwd: rt.cwd }))[0])
+        : [
+          () => ({ name: 'offline-runtime', ok: true, detail: 'fake provider executed without network' }),
+        ],
+      memory: {
+        readTier: (tier) => readStoredMemoryTier(tier, {
+          home: CONFIG_DIR,
+          sessionsFile: SESSIONS_FILE,
+          statsFile: STATS_FILE,
+          checkpointsFile: CHECKPOINTS_FILE,
+          tracesFile: TRACES_FILE,
+          projectContextPath: projectContextPath(rt.cwd),
+          legacyProjectContextPath: legacyProjectContextPath(rt.cwd),
+        }),
+        writeCheckpoint: writeAgentCheckpoint,
+        appendTrace: appendAgentTrace,
+      },
+      memoryTiers: ['project', 'task'],
+    })
+    await recordStats('agent', Date.now() - started, true)
+    if (rt.json) return printJson(result)
+    printBrand(rt, 'Aillive Agent')
+    printPanel('Objective', objective, rt)
+    printPanel('Result', result.output, rt)
+    printTable(result.verification.map((item) => ({
+      check: item.name,
+      ok: item.ok ? 'yes' : 'no',
+      detail: item.detail,
+    })), ['check', 'ok', 'detail'])
+    printPanel('Checkpoint', `${result.checkpoint.id}\n${CHECKPOINTS_FILE}`, rt)
+    if (parsed.global.trace) {
+      printTable(result.run.events.map((event) => ({
+        type: event.type,
+        state: event.state || '',
+        at: event.at || '',
+      })), ['type', 'state', 'at'])
+    }
+    return
+  }
+  if (action === 'resume') {
+    const id = parsed.rest[0] || 'latest'
+    const checkpoint = await readAgentCheckpoint(id)
+    const result = await resumeAgentRun({ checkpoint, id })
+    if (rt.json) return printJson(result)
+    printBrand(rt, 'Aillive Agent Resume')
+    printPanel('Checkpoint', result.checkpoint.id, rt)
+    printPanel('Objective', result.objective || '(empty)', rt)
+    printPanel('Summary', result.summary || '(empty)', rt)
+    printPanel('Next', result.next, rt)
+    return
+  }
+  throw new Error('Usage: aillive agent plan|run|resume "task"')
 }
 
 export function generateCompletion(shell = 'powershell') {
@@ -1286,22 +1361,14 @@ async function cmdOpenClaw(parsed) {
     printBrand(rt, 'Aillive OpenClaw')
     printPanel('Task', task, rt)
   }
-  const data = await withSpinner('Running OpenClaw task...', rt, () => requestJson(`${apiRoot(rt.baseUrl)}/openclaw/v1/tasks`, {
-    method: 'POST',
-    headers: authHeaders(rt.apiKey),
-    body: JSON.stringify({ task, model: rt.model || undefined }),
-  }))
+  const data = await withSpinner('Running OpenClaw task...', rt, () => runOpenClawTask({ ...rt, task }))
   await recordStats('openclaw', 0, true)
   return rt.json ? printJson(data) : printPanel('Result', extractContent(data.response) || data.task?.result || JSON.stringify(data, null, 2), rt)
 }
 
 async function cmdUsage(parsed) {
   const rt = await ensureAuthForRequest(await runtime(parsed.global), 'usage')
-  const params = new URLSearchParams()
-  if (parsed.global.from) params.set('from', parsed.global.from)
-  if (parsed.global.to) params.set('to', parsed.global.to)
-  const suffix = params.toString() ? `?${params.toString()}` : ''
-  const data = await withSpinner('Loading usage...', rt, () => requestJson(`${rt.baseUrl}/usage${suffix}`, { headers: authHeaders(rt.apiKey) }))
+  const data = await withSpinner('Loading usage...', rt, () => loadUsage({ ...rt, from: parsed.global.from, to: parsed.global.to }))
   if (rt.json) return printJson(data)
   printBrand(rt, 'Aillive Usage')
   const usage = data.usage || {}
@@ -1322,7 +1389,7 @@ async function cmdDoctor(parsed) {
   checks.push({ check: 'apiKey', ok: Boolean(rt.apiKey), detail: rt.apiKey ? 'configured' : 'missing' })
   if (rt.apiKey) {
     try {
-      const data = await requestJson(`${rt.baseUrl}/models`, { headers: authHeaders(rt.apiKey) })
+      const data = await listModels(rt)
       checks.push({ check: 'models', ok: true, detail: `${data.data?.length || 0} models` })
     } catch (error) {
       checks.push({ check: 'models', ok: false, detail: error.message })
@@ -1687,6 +1754,7 @@ async function dispatch(parsed) {
     case 'ask': return cmdChat(parsed, false)
     case 'chat': return cmdChat(parsed, false)
     case 'run': return cmdChat(parsed, true)
+    case 'agent': return cmdAgent(parsed)
     case 'init': return cmdInit(parsed)
     case 'context': return cmdContext(parsed)
     case 'session': return cmdSession(parsed)
@@ -1720,8 +1788,11 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     await dispatch(parsed)
   } catch (error) {
-    const enabled = parsed.global?.color !== false
-    console.error(color.red(`Error: ${error.message}`, enabled))
+    if (parsed.global?.json) console.log(JSON.stringify(errorToJson(error), null, 2))
+    else {
+      const enabled = parsed.global?.color !== false
+      console.error(color.red(`Error: ${error.message}`, enabled))
+    }
     process.exitCode = Number(error.status || 1) === 1 ? 1 : 1
     try {
       await recordStats(parsed.command || 'unknown', 0, false)

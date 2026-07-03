@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional package.json version to assert before release
+        required: false
+        type: string
+      publish_to_npm:
+        description: Publish to npm after all release checks pass
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    name: Validate and optionally publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm install --ignore-scripts
+
+      - name: Assert requested version
+        if: ${{ inputs.version != '' }}
+        run: |
+          node -e "const pkg=require('./package.json'); const expected=process.env.EXPECTED_VERSION; if (pkg.version !== expected) { throw new Error('Expected '+expected+', got '+pkg.version) }"
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+
+      - name: Release gate
+        run: npm run publish:check
+
+      - name: Create npm tarball artifact
+        run: |
+          mkdir -p dist
+          npm pack --json --pack-destination dist
+
+      - name: Upload npm tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aillive-code-npm-tarball
+          path: dist/*.tgz
+          if-no-files-found: error
+
+      - name: Publish to npm
+        if: ${{ inputs.publish_to_npm }}
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

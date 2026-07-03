@@ -10,7 +10,7 @@ const testHome = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-home-'))
 process.env.AILLIVE_HOME = testHome
 test.after(() => fs.rm(testHome, { recursive: true, force: true }))
 
-const { DEFAULT_BASE_URL, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, wordmarkForWidth } = await import('../src/index.js')
+const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, wordmarkForWidth } = await import('../src/index.js')
 
 async function captureMain(args) {
   const lines = []
@@ -28,6 +28,32 @@ async function captureMain(args) {
     process.exitCode = oldExitCode
   }
   return lines.join('\n')
+}
+
+async function captureMainRaw(args) {
+  const chunks = []
+  const oldLog = console.log
+  const oldError = console.error
+  const oldWrite = process.stdout.write
+  const oldExitCode = process.exitCode
+  process.exitCode = undefined
+  console.log = (value = '') => chunks.push(`${String(value)}\n`)
+  console.error = (value = '') => chunks.push(`${String(value)}\n`)
+  process.stdout.write = (chunk, encoding, callback) => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk.toString(encoding === 'buffer' ? undefined : encoding) : String(chunk))
+    const cb = typeof encoding === 'function' ? encoding : callback
+    if (typeof cb === 'function') cb()
+    return true
+  }
+  try {
+    await main(args)
+  } finally {
+    console.log = oldLog
+    console.error = oldError
+    process.stdout.write = oldWrite
+    process.exitCode = oldExitCode
+  }
+  return chunks.join('')
 }
 
 test('exports version and default base url', () => {
@@ -146,9 +172,47 @@ test('config set api-key writes auth.json instead of config apiKey', async () =>
 test('builds grouped help with project and completion commands', () => {
   const help = buildHelp(false)
   assert.match(help, /aillive context status/)
+  assert.match(help, /aillive agent run/)
+  assert.match(help, /aillive agent verify/)
   assert.match(help, /aillive home/)
   assert.match(help, /--project/)
+  assert.match(help, /--offline/)
+  assert.match(help, /--verify/)
   assert.match(help, /aillive completions powershell/)
+  assert.equal(COMMAND_MODULES.some((item) => item.name === 'agent'), true)
+  assert.equal(SLASH_COMMAND_GROUPS.some((group) => group.commands.some(([command]) => command === '/context on')), true)
+})
+
+test('help, version, status, config list, and context show stay scriptable', async (t) => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-scriptable-'))
+  t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
+
+  const help = await captureMain(['--help', '--no-color'])
+  const version = await captureMain(['--version'])
+  await captureMain(['config', 'set', 'model', 'mock-model'])
+  const config = JSON.parse(await captureMain(['--json', 'config', 'list']))
+  const status = JSON.parse(await captureMain(['--json', 'status', '--cwd', projectDir]))
+  await captureMain(['init', '--cwd', projectDir])
+  const context = await captureMain(['context', 'show', '--cwd', projectDir])
+
+  assert.match(help, /Aillive CLI/)
+  assert.equal(version.trim(), VERSION)
+  assert.equal(config.model, 'mock-model')
+  assert.equal(status.home, testHome)
+  assert.equal(status.subsystems.provider.component, 'provider')
+  assert.equal(status.subsystems.mcp.component, 'mcp')
+  assert.equal(status.subsystems.lsp.component, 'lsp')
+  assert.equal(status.subsystems.git.component, 'git')
+  assert.equal(status.subsystems.memory.component, 'memory')
+  assert.match(context, /Aillive Project Context/)
+})
+
+test('json errors use stable automation shape', async () => {
+  const output = await captureMain(['--json', 'context', 'show', '--cwd', path.join(os.tmpdir(), 'aillive missing 中文 path')])
+  const payload = JSON.parse(output)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.error.code, 'COMMAND_USAGE')
+  assert.match(payload.error.message, /Project context not found/)
 })
 
 test('formats working elapsed time from real milliseconds', () => {
@@ -195,6 +259,45 @@ test('architecture status commands return stable json without external services'
   }
 })
 
+test('agent plan, run, and resume work offline with checkpoint memory', async (t) => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-agent-'))
+  t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
+
+  const planOutput = await captureMain(['--json', 'agent', 'plan', 'Prepare release notes', '--cwd', projectDir])
+  const plan = JSON.parse(planOutput)
+  assert.equal(plan.objective, 'Prepare release notes')
+  assert.equal(plan.steps.length, 4)
+
+  const runOutput = await captureMain(['--json', 'agent', 'run', 'Prepare release notes', '--cwd', projectDir])
+  const run = JSON.parse(runOutput)
+  assert.equal(run.run.state, 'completed')
+  assert.match(run.output, /Offline agent result/)
+  assert.equal(run.verification[0].ok, true)
+  assert.equal(run.checkpoint.objective, 'Prepare release notes')
+
+  const resumeOutput = await captureMain(['--json', 'agent', 'resume', run.checkpoint.id, '--cwd', projectDir])
+  const resume = JSON.parse(resumeOutput)
+  assert.equal(resume.checkpoint.id, run.checkpoint.id)
+  assert.equal(resume.objective, 'Prepare release notes')
+})
+
+test('mcp call, git diff/checkpoint, and memory search are scriptable', async (t) => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-subsystems-'))
+  t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
+
+  const mcp = JSON.parse(await captureMain(['--json', 'mcp', 'call', 'echo', '{"hello":"aillive"}', '--cwd', projectDir]))
+  const gitDiff = JSON.parse(await captureMain(['--json', 'git', 'diff', '--summary', '--cwd', projectDir]))
+  const gitCheckpoint = JSON.parse(await captureMain(['--json', 'git', 'checkpoint', '--cwd', projectDir]))
+  await captureMain(['--json', 'agent', 'run', 'Searchable memory task', '--cwd', projectDir])
+  const memory = JSON.parse(await captureMain(['--json', 'memory', 'search', 'Searchable', '--cwd', projectDir]))
+
+  assert.equal(mcp.ok, true)
+  assert.match(mcp.output, /aillive/)
+  assert.equal(gitDiff.component, 'git')
+  assert.equal(gitCheckpoint.component, 'git')
+  assert.equal(memory.results.some((item) => item.tier === 'task'), true)
+})
+
 test('models command calls an API mock', async (t) => {
   let requested = false
   const server = http.createServer((req, res) => {
@@ -220,8 +323,43 @@ test('models command calls an API mock', async (t) => {
     console.error = oldError
   }
 
+  const payload = JSON.parse(lines.join('\n'))
   assert.equal(requested, true)
-  assert.match(lines.join('\n'), /mock-model/)
+  assert.equal(payload.data[0].id, 'mock-model')
+  assert.equal(payload.data[0].label, 'Mock Model')
+  assert.equal(payload.data[0].supports.streaming, true)
+})
+
+test('chat and streaming commands call API mocks', async (t) => {
+  const requests = []
+  const server = http.createServer((req, res) => {
+    requests.push(req.url)
+    assert.equal(req.url, '/chat/completions')
+    if (requests.length === 1) {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ choices: [{ message: { content: 'mock chat response' } }] }))
+      return
+    }
+    res.setHeader('content-type', 'text/event-stream')
+    res.end([
+      'data: {"choices":[{"delta":{"content":"stream "}}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":"response"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'))
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const { port } = server.address()
+
+  const chat = JSON.parse(await captureMain(['--api-key', 'ail_test', '--base-url', `http://127.0.0.1:${port}`, '--json', 'chat', 'hello']))
+  const stream = await captureMainRaw(['--api-key', 'ail_test', '--base-url', `http://127.0.0.1:${port}`, 'chat', '--stream', 'hello'])
+
+  assert.equal(chat.choices[0].message.content, 'mock chat response')
+  assert.match(stream, /stream response/)
+  assert.equal(requests.length, 2)
 })
 
 test('admin promote updates a local store and creates a backup', async (t) => {

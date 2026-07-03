@@ -19,7 +19,7 @@ This repository is designed to be published as the npm package `aillive-code`. T
 - `aillive`
 - `aillive-code`
 
-The product structure is inspired by mature AI coding CLIs such as MiMo Code, Codex, Claude Code, and Droid: quick install, browser login, slash commands, project memory, one-shot execution, local configuration, and CI-friendly JSON output. Aillive Code keeps its own command names, auth flow, API protocol, and local data layout.
+The product structure is inspired by mature AI coding CLIs: quick install, browser login, slash commands, project memory, one-shot execution, local configuration, and CI-friendly JSON output. Aillive Code keeps its own command names, auth flow, API protocol, and local data layout.
 
 ## Quick Start
 
@@ -133,6 +133,10 @@ Aillive Code stores user-level configuration under the computer user home direct
   stats.json
   sessions/
     index.json
+  checkpoints/
+    index.json
+  traces/
+    index.json
   projects/
     <project-key>/
       project.md
@@ -161,6 +165,7 @@ aillive run --project "Summarize the current project"
 | Start | `aillive`, `aillive interactive`, `aillive setup`, `aillive doctor` |
 | Auth | `aillive auth login`, `aillive auth import`, `aillive auth status`, `aillive logout` |
 | Chat | `aillive ask`, `aillive chat`, `aillive chat --stream`, `aillive "prompt"` |
+| Agent | `aillive agent plan "task"`, `aillive agent run "task"`, `aillive agent run --verify "task"`, `aillive agent verify`, `aillive agent resume [checkpoint]` |
 | Project | `aillive init`, `aillive run --project`, `aillive context status/show/path/init` |
 | Models | `aillive models` |
 | Usage | `aillive usage --from 2026-07-01 --to 2026-07-31 --json` |
@@ -182,6 +187,8 @@ Global options:
 --cwd <dir>          Run with a different project directory
 --data-dir <dir>     Local Aillive data directory for maintenance commands
 --open               Open local folders in the system file manager
+--offline            Prefer local fake-provider runtime paths
+--trace              Include trace events where supported
 --json               Print JSON output
 --no-color           Disable ANSI colors
 ```
@@ -205,17 +212,25 @@ packages/agent-runtime planning, tool routing, verification, and task traces
 The first architecture batch keeps existing command behavior intact while creating package boundaries for future extraction.
 Architecture status commands are available in human and JSON modes so automation can inspect subsystem readiness before deeper agent execution.
 The stable utility layer has started moving into packages: Core handles config/path/parser/JSON/auth helpers, TUI handles terminal rendering helpers, and Memory handles local sessions, stats, and project context stores.
+Provider calls are now owned by `packages/provider`: model listing, normalized model metadata, chat completions, SSE streaming, usage, OpenClaw tasks, timeout/retry policy, status checks, and redacted request traces.
+Git, LSP, and Agent Runtime now expose offline-testable contracts for read-only repository inspection, mock JSON-RPC language intelligence, and validated agent state transitions with trace/checkpoint events.
+The `aillive agent plan|run|resume` commands exercise that runtime offline, write checkpoint/trace memory under `~/.aillive`, and are safe to run without browser login. `aillive agent verify` and `aillive agent run --verify` run the configured syntax, test, and pack-smoke verification hooks.
+Aillive MCP exposes its own Aillive tool contract. It reuses a small MIT third-party contract package only as an internal implementation source, while keeping all public API names, command names, auth, protocol, and local data layout under Aillive.
+The agent runtime also enforces safety gates for destructive shell commands, secret-bearing traces, large file edits, dirty Git worktrees, and high-risk MCP tools.
 
 ```bash
 npm install
 npm run check
+npm run check:release
 npm test
 npm run smoke:npx
+npm run pack:smoke
 npm run pack:dry
 npm run publish:check
 ```
 
-`npm run smoke:npx` creates a temporary packed tarball, starts a mock Aillive API, and verifies that `npx <tarball> chat --json "Hello"` can call the CLI through npm's execution path.
+`npm run check:release` verifies release metadata, changelog version coverage, bin aliases, package file allowlist, and release docs.
+`npm run pack:smoke` creates a temporary packed tarball, checks the tarball file list, starts a mock Aillive API, and verifies both `aillive` and `aillive-code` through npm's execution path. `npm run smoke:npx` remains a compatibility alias for the same pack smoke.
 
 ## Publishing
 
@@ -225,6 +240,8 @@ Before publishing:
 
 ```bash
 npm whoami
+npm run check:release
+npm run pack:smoke
 npm run publish:check
 npm publish
 ```
@@ -245,11 +262,14 @@ npx aillive-code chat "Hello"
 ## GitHub Release Checklist
 
 1. Confirm `package.json` version.
-2. Run `npm run publish:check`.
-3. Confirm `npm pack --dry-run` includes the CLI app, compatibility shim, internal packages, docs assets, README files, LICENSE, and package metadata only.
-4. Push `main`.
-5. Create a GitHub release tag such as `v0.1.0`.
-6. Publish to npm after login.
+2. Confirm `CHANGELOG.md` has a heading for the same version.
+3. Run `npm run publish:check`.
+4. Confirm `npm pack --dry-run` includes the CLI app, compatibility shim, internal packages, docs assets, README files, LICENSE, and package metadata only.
+5. Push `main`.
+6. Create a GitHub release tag such as `v0.1.0`.
+7. Publish to npm after login.
+
+The manual GitHub Actions `Release` workflow runs `npm run publish:check`, creates a tarball artifact, and does not publish by default. Set `publish_to_npm` to `true` only for an intentional npm release with `NPM_TOKEN` configured; the workflow publishes with npm provenance.
 
 ## Security
 

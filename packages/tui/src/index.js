@@ -91,6 +91,43 @@ export function formatCommandBlock(lines) {
   return lines.map((item) => `  $ ${item}`).join('\n')
 }
 
+export function formatCommandPalette(groups = [], rt = {}, options = {}) {
+  const useColor = canUseColor(rt.color)
+  const width = options.width || Math.min(terminalWidth(), 104)
+  const rows = []
+  for (const group of groups) {
+    rows.push(color.bold(group.title || 'Commands', useColor))
+    const commands = group.commands || []
+    const commandWidth = Math.min(28, Math.max(0, ...commands.map((item) => String(item.command || item[0] || '').length)))
+    for (const item of commands) {
+      const command = String(item.command || item[0] || '')
+      const description = String(item.description || item[1] || '')
+      rows.push(`  ${color.cyan(padEndVisual(command, commandWidth), useColor)}  ${fitVisual(description, Math.max(16, width - commandWidth - 6))}`)
+    }
+    rows.push('')
+  }
+  return rows.join('\n').trimEnd()
+}
+
+export function interactivePrompt(rt = {}) {
+  return canUseColor(rt.color) ? '\x1b[48;5;236m\x1b[37m> ' : '> '
+}
+
+export const spinnerFrames = ['-', '\\', '|', '/']
+
+export function workingIndicatorFrame(label = 'Working', startedAt = Date.now(), frameIndex = 0, rt = {}) {
+  const useColor = canUseColor(rt.color)
+  const frame = spinnerFrames[Math.abs(frameIndex) % spinnerFrames.length]
+  return `${color.cyan(frame, useColor)} ${color.bold(label, useColor)} ${color.gray(`(${formatElapsed(Date.now() - startedAt)})`, useColor)}`
+}
+
+export function renderStreamChunk(previous = '', chunk = '') {
+  const text = String(chunk || '')
+  if (!previous) return { prefix: '', text }
+  if (text.startsWith(previous)) return { prefix: '', text: text.slice(previous.length), replace: false }
+  return { prefix: '\n', text, replace: true }
+}
+
 export function centerLine(value, width = terminalColumns()) {
   const text = String(value || '')
   return `${' '.repeat(Math.max(0, Math.floor((width - visibleLength(text)) / 2)))}${text}`

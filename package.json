@@ -14,7 +14,8 @@
   "files": [
     "apps/cli/src",
     "apps/cli/package.json",
-    "packages",
+    "packages/*/src/**",
+    "packages/*/package.json",
     "src",
     "docs/assets/aillive-code-terminal.png",
     "docs/assets/aillive_code.png",
@@ -27,10 +28,13 @@
     "check": "npm run check:workspace && npm run check:syntax",
     "check:workspace": "node ./scripts/verify-workspace.mjs",
     "check:syntax": "node ./scripts/check-syntax.mjs",
+    "check:release": "node ./scripts/check-release.mjs",
     "test": "node --test",
-    "smoke:npx": "node ./test/npx-smoke.mjs",
+    "test:integration": "node --test test/cli.test.js",
+    "smoke:npx": "npm run pack:smoke",
+    "pack:smoke": "node ./scripts/pack-smoke.mjs",
     "pack:dry": "npm pack --dry-run",
-    "publish:check": "npm run check && npm test && npm run smoke:npx && npm run pack:dry"
+    "publish:check": "npm run check && npm run check:release && npm test && npm run pack:smoke && npm run pack:dry"
   },
   "engines": {
     "node": ">=18"
@@ -56,5 +60,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@mimo-ai/plugin": "^0.1.4"
+  }
 }
