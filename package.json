@@ -1,0 +1,49 @@
+{
+  "name": "aillive-code",
+  "version": "0.1.0",
+  "description": "Aillive Code command line AI assistant for terminal chat, project context, OpenAI-compatible APIs, and OpenClaw tasks.",
+  "type": "module",
+  "bin": {
+    "aillive": "./src/index.js",
+    "aillive-code": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "docs/assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "node ./src/index.js",
+    "check": "node --check ./src/index.js",
+    "test": "node --test",
+    "smoke:npx": "node ./test/npx-smoke.mjs",
+    "pack:dry": "npm pack --dry-run",
+    "publish:check": "npm run check && npm test && npm run smoke:npx && npm run pack:dry"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "aillive",
+    "aillive-code",
+    "ai",
+    "cli",
+    "agent",
+    "terminal",
+    "openai",
+    "openclaw"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amine123max/Aillive-Code.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amine123max/Aillive-Code/issues"
+  },
+  "homepage": "https://github.com/amine123max/Aillive-Code#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

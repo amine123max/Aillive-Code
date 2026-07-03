@@ -1,0 +1,11 @@
+node_modules/
+*.tgz
+.env
+.env.*
+coverage/
+dist/
+.aillive/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
