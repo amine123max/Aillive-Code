@@ -1,0 +1,13 @@
+{
+  "name": "@aillive/tui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Terminal UI primitives for Aillive Code.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

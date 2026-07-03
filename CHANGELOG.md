@@ -10,3 +10,6 @@
 - Added Node test coverage, local API mocks, npx tarball smoke test, and GitHub Actions CI.
 - Added real rendered terminal screenshot asset for GitHub and npm README pages.
 - Added bilingual README entry points and Website/Docs/GitHub links.
+- Added Batch 1 workspace architecture skeleton with `apps/cli`, internal packages, workspace verification, and syntax check scripts.
+- Added architecture status commands for runtime, provider, MCP, LSP, Git, and memory readiness.
+- Extracted stable Core, TUI, and Memory utilities into package-level APIs with offline package tests.

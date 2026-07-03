@@ -12,6 +12,24 @@ test.after(() => fs.rm(testHome, { recursive: true, force: true }))
 
 const { DEFAULT_BASE_URL, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, wordmarkForWidth } = await import('../src/index.js')
 
+async function captureMain(args) {
+  const lines = []
+  const oldLog = console.log
+  const oldError = console.error
+  const oldExitCode = process.exitCode
+  process.exitCode = undefined
+  console.log = (value = '') => lines.push(String(value))
+  console.error = (value = '') => lines.push(String(value))
+  try {
+    await main(args)
+  } finally {
+    console.log = oldLog
+    console.error = oldError
+    process.exitCode = oldExitCode
+  }
+  return lines.join('\n')
+}
+
 test('exports version and default base url', () => {
   assert.match(VERSION, /^\d+\.\d+\.\d+$/)
   assert.equal(DEFAULT_BASE_URL, 'https://www.aillive.xyz/api/v1')
@@ -153,6 +171,28 @@ test('generates shell completions', () => {
   assert.match(generateCompletion('powershell'), /Register-ArgumentCompleter/)
   assert.match(generateCompletion('bash'), /complete -F _aillive_complete aillive/)
   assert.match(generateCompletion('zsh'), /#compdef aillive/)
+})
+
+test('architecture status commands return stable json without external services', async (t) => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-arch-'))
+  t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
+
+  const commands = [
+    ['runtime', 'status'],
+    ['provider', 'status'],
+    ['mcp', 'status'],
+    ['mcp', 'list'],
+    ['lsp', 'status'],
+    ['git', 'status'],
+    ['memory', 'status'],
+  ]
+
+  for (const command of commands) {
+    const output = await captureMain(['--json', ...command, '--cwd', projectDir])
+    const payload = JSON.parse(output)
+    assert.equal(typeof payload.component, 'string')
+    assert.equal(typeof payload.status, 'string')
+  }
 })
 
 test('models command calls an API mock', async (t) => {

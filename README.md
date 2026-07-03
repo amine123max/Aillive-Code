@@ -2,7 +2,7 @@
 
 # Aillive Code
 
-<img src="docs/assets/aillive-code-terminal.png" alt="Aillive Code interactive terminal" width="920" />
+<img src="docs/assets/aillive_code.png" alt="Aillive Code logo" width="920" />
 
 **Aillive Code: a terminal AI assistant for chat, agents, APIs, and project work.**
 
@@ -166,6 +166,7 @@ aillive run --project "Summarize the current project"
 | Usage | `aillive usage --from 2026-07-01 --to 2026-07-31 --json` |
 | OpenClaw | `aillive openclaw run "Create a WeChat support workflow"` |
 | Local | `aillive home`, `aillive session list`, `aillive stats` |
+| Architecture | `aillive runtime status`, `aillive provider status`, `aillive mcp status`, `aillive lsp status`, `aillive git status`, `aillive memory status` |
 | Shell | `aillive completions powershell`, `aillive completions bash`, `aillive completions zsh` |
 | Admin | `aillive admin promote admin@example.com --data-dir "../Web/data"` |
 
@@ -187,7 +188,26 @@ Global options:
 
 ## Developer Workflow
 
+Aillive Code is now organized as an npm workspace while the root package still publishes the `aillive-code` npm artifact. The executable app lives in `apps/cli`, and the root `src/index.js` remains a compatibility shim for older imports and tests.
+
+```text
+apps/cli              CLI app and command entrypoint
+packages/core         shared config, path, parsing, error, and formatting utilities
+packages/tui          terminal rendering and interactive UI primitives
+packages/provider     Aillive and OpenAI-compatible provider clients
+packages/mcp          MCP registry and tool invocation contracts
+packages/lsp          language server integration contracts
+packages/git          repository inspection and checkpoint metadata
+packages/memory       local sessions, stats, project memory, and checkpoints
+packages/agent-runtime planning, tool routing, verification, and task traces
+```
+
+The first architecture batch keeps existing command behavior intact while creating package boundaries for future extraction.
+Architecture status commands are available in human and JSON modes so automation can inspect subsystem readiness before deeper agent execution.
+The stable utility layer has started moving into packages: Core handles config/path/parser/JSON/auth helpers, TUI handles terminal rendering helpers, and Memory handles local sessions, stats, and project context stores.
+
 ```bash
+npm install
 npm run check
 npm test
 npm run smoke:npx
@@ -226,7 +246,7 @@ npx aillive-code chat "Hello"
 
 1. Confirm `package.json` version.
 2. Run `npm run publish:check`.
-3. Confirm `npm pack --dry-run` only includes `src/`, `README.md`, `LICENSE`, and `package.json`.
+3. Confirm `npm pack --dry-run` includes the CLI app, compatibility shim, internal packages, docs assets, README files, LICENSE, and package metadata only.
 4. Push `main`.
 5. Create a GitHub release tag such as `v0.1.0`.
 6. Publish to npm after login.

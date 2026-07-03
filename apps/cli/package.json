@@ -1,0 +1,17 @@
+{
+  "name": "@aillive/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aillive Code CLI app package.",
+  "type": "module",
+  "bin": {
+    "aillive": "./src/index.js",
+    "aillive-code": "./src/index.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

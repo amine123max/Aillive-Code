@@ -2,7 +2,7 @@
 
 # Aillive Code
 
-<img src="docs/assets/aillive-code-terminal.png" alt="Aillive Code 交互式终端" width="920" />
+<img src="docs/assets/aillive_code.png" alt="Aillive Code 标志" width="920" />
 
 **Aillive Code：用于对话、Agent、API 和项目工作的终端 AI 助手。**
 
@@ -166,12 +166,32 @@ aillive run --project "总结当前项目"
 | 用量 | `aillive usage --from 2026-07-01 --to 2026-07-31 --json` |
 | OpenClaw | `aillive openclaw run "生成微信客服自动回复流程"` |
 | 本地 | `aillive home`, `aillive session list`, `aillive stats` |
+| 架构 | `aillive runtime status`, `aillive provider status`, `aillive mcp status`, `aillive lsp status`, `aillive git status`, `aillive memory status` |
 | Shell | `aillive completions powershell`, `aillive completions bash`, `aillive completions zsh` |
 | 管理 | `aillive admin promote admin@example.com --data-dir "../Web/data"` |
 
 ## 开发
 
+Aillive Code 现在按 npm workspace 组织，同时仍由根包发布 `aillive-code` npm 包。可执行 CLI app 位于 `apps/cli`，根目录 `src/index.js` 保留为兼容 shim，方便旧测试和旧导入路径继续工作。
+
+```text
+apps/cli              CLI app 和命令入口
+packages/core         config、path、parser、error、formatting 等共享工具
+packages/tui          终端渲染和交互式 UI primitives
+packages/provider     Aillive 与 OpenAI-compatible Provider client
+packages/mcp          MCP registry 和 tool invocation contracts
+packages/lsp          Language Server integration contracts
+packages/git          Git 仓库检查和 checkpoint metadata
+packages/memory       本地 sessions、stats、project memory 和 checkpoint
+packages/agent-runtime planning、tool routing、verification 和 task trace
+```
+
+第一批架构改造只建立包边界，并保持现有命令行为不变。
+架构状态命令同时支持 human 和 JSON 模式，便于在深入 Agent 执行前检查 subsystem readiness。
+稳定工具层已经开始进入 packages：Core 负责 config/path/parser/JSON/auth helpers，TUI 负责终端渲染工具，Memory 负责本地 sessions、stats 和 project context stores。
+
 ```bash
+npm install
 npm run check
 npm test
 npm run smoke:npx

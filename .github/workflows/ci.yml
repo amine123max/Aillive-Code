@@ -36,8 +36,11 @@ jobs:
       - name: Install
         run: npm install --ignore-scripts
 
+      - name: Workspace graph
+        run: npm run check:workspace
+
       - name: Syntax check
-        run: npm run check
+        run: npm run check:syntax
 
       - name: Unit tests
         run: npm test
