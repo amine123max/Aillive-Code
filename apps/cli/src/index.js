@@ -434,9 +434,14 @@ async function importAuthJson(file, fallback = {}) {
   return saveAuth(normalizeAuthPayload(payload, fallback))
 }
 
+export function browserOpenCommand(url, platform = process.platform) {
+  if (platform === 'win32') return { command: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', url] }
+  if (platform === 'darwin') return { command: 'open', args: [url] }
+  return { command: 'xdg-open', args: [url] }
+}
+
 function openBrowser(url) {
-  const command = process.platform === 'win32' ? 'cmd' : (process.platform === 'darwin' ? 'open' : 'xdg-open')
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
+  const { command, args } = browserOpenCommand(url)
   const child = spawn(command, args, { detached: true, stdio: 'ignore', shell: false })
   child.unref()
 }

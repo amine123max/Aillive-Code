@@ -10,7 +10,7 @@ const testHome = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-home-'))
 process.env.AILLIVE_HOME = testHome
 test.after(() => fs.rm(testHome, { recursive: true, force: true }))
 
-const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, startCliAuthCallbackServer, wordmarkForWidth } = await import('../src/index.js')
+const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, browserOpenCommand, buildHelp, formatElapsed, generateCompletion, main, parseArgv, startCliAuthCallbackServer, wordmarkForWidth } = await import('../src/index.js')
 
 async function captureMain(args) {
   const lines = []
@@ -167,6 +167,17 @@ test('config set api-key writes auth.json instead of config apiKey', async () =>
   assert.equal(auth.apiKey, 'ail_test_secret')
   assert.equal(auth.type, 'aillive_cli_auth')
   assert.equal(config.apiKey, undefined)
+})
+
+test('windows browser launch preserves auth callback query params', () => {
+  const loginUrl = 'https://www.aillive.xyz/?cli_auth=1&callback_url=http%3A%2F%2F127.0.0.1%3A49152%2Fcallback&state=abc123'
+  const launch = browserOpenCommand(loginUrl, 'win32')
+
+  assert.equal(launch.command, 'rundll32.exe')
+  assert.deepEqual(launch.args, ['url.dll,FileProtocolHandler', loginUrl])
+  assert.equal(launch.args.includes('/c'), false)
+  assert.match(launch.args[1], /callback_url=/)
+  assert.match(launch.args[1], /&state=abc123$/)
 })
 
 test('auth browser callback writes auth.json under CLI home with animated auto-close page', async (t) => {
