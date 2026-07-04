@@ -201,6 +201,37 @@ test('auth browser callback writes auth.json under CLI home with animated auto-c
   await assert.rejects(() => fs.access(path.join(projectDir, 'auth.json')), { code: 'ENOENT' })
 })
 
+test('auth browser callback accepts web form post payloads', async (t) => {
+  await fs.rm(path.join(testHome, 'auth.json'), { force: true })
+  const callback = await startCliAuthCallbackServer(
+    { baseUrl: DEFAULT_BASE_URL },
+    { state: 'form-post-state-test', timeoutMs: 5000 },
+  )
+  t.after(() => callback.close())
+
+  const response = await fetch(callback.url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      state: callback.state,
+      payload: JSON.stringify({
+        apiKey: 'ail_form_post_secret',
+        baseUrl: 'https://form.example.com/api/v1',
+      }),
+    }),
+  })
+  const html = await response.text()
+  const result = await callback.wait
+  const auth = JSON.parse(await fs.readFile(path.join(testHome, 'auth.json'), 'utf8'))
+
+  assert.equal(response.status, 200)
+  assert.equal(result.source, 'browser callback')
+  assert.equal(auth.apiKey, 'ail_form_post_secret')
+  assert.equal(auth.baseUrl, 'https://form.example.com/api/v1')
+  assert.match(html, /Credentials saved/)
+  assert.match(html, /window\.close\(\)/)
+})
+
 test('builds grouped help with project and completion commands', () => {
   const help = buildHelp(false)
   assert.match(help, /aillive context status/)
