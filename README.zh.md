@@ -68,7 +68,7 @@ aillive doctor
 ```text
 /help        查看交互命令
 /status      查看 auth、model、context、home、authFile、workspace
-/login       打开浏览器登录并等待 auth.json
+/login       打开浏览器登录，回调自动保存 ~/.aillive/auth.json
 /models      列出服务端模型
 /context     查看项目上下文状态
 /context on  为当前终端会话附加项目记忆
@@ -95,10 +95,9 @@ aillive run --project "生成简洁的 README 大纲"
 aillive auth login
 ```
 
-手动导入认证文件：
+浏览器回调会自动写入 `~/.aillive/auth.json`。登录过程中请保持终端打开，直到 Aillive 打印认证成功信息。
 
 ```bash
-aillive auth import auth.json
 aillive auth status
 aillive auth path
 ```

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import http from 'node:http'
 import { spawn } from 'node:child_process'
 import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
@@ -116,13 +116,14 @@ function resetPromptStyle(rt = {}) {
   if (canUseColor(rt.color)) process.stdout.write('\x1b[0m')
 }
 
-function printAuthFlowCard(rt = {}, loginUrl = '') {
+function printAuthFlowCard(rt = {}, loginUrl = '', callbackUrl = '') {
   if (rt.json) return
   const useColor = canUseColor(rt.color)
   console.log('')
   console.log(`${color.yellow('Login required', useColor)} ${color.gray('-', useColor)} browser auth is needed for this request.`)
   console.log(`${color.gray('Open', useColor)}   ${loginUrl}`)
-  console.log(`${color.gray('Save', useColor)}   ${color.cyan('auth.json', useColor)} ${color.gray('to', useColor)} ${AUTH_FILE}`)
+  if (callbackUrl) console.log(`${color.gray('Callback', useColor)} ${callbackUrl}`)
+  console.log(`${color.gray('Save', useColor)}   browser callback writes ${color.cyan('auth.json', useColor)} ${color.gray('to', useColor)} ${AUTH_FILE}`)
 }
 
 function printInteractiveHelp(rt = {}) {
@@ -411,20 +412,19 @@ function webOriginFromBaseUrl(baseUrl) {
   return url.origin
 }
 
-function cliAuthLoginUrl(rt) {
+function cliAuthLoginUrl(rt, callback = null) {
   const url = new URL(webOriginFromBaseUrl(rt.baseUrl))
   url.searchParams.set('cli_auth', '1')
   url.searchParams.set('client', 'aillive-cli')
   url.searchParams.set('version', VERSION)
+  if (callback?.url) {
+    url.searchParams.set('callback_url', callback.url)
+    url.searchParams.set('callbackUrl', callback.url)
+    url.searchParams.set('redirect_uri', callback.url)
+    url.searchParams.set('callback', callback.url)
+  }
+  if (callback?.state) url.searchParams.set('state', callback.state)
   return url.toString()
-}
-
-function authJsonCandidates(cwd = process.cwd()) {
-  return [
-    AUTH_FILE,
-    path.join(os.homedir(), 'Downloads', 'auth.json'),
-    path.join(cwd, 'auth.json'),
-  ]
 }
 
 async function importAuthJson(file, fallback = {}) {
@@ -432,18 +432,6 @@ async function importAuthJson(file, fallback = {}) {
   const payload = safeParseJson(raw)
   if (!payload) throw new Error(`Invalid auth.json at ${file}.`)
   return saveAuth(normalizeAuthPayload(payload, fallback))
-}
-
-async function findAndImportAuthJson(rt) {
-  for (const candidate of authJsonCandidates(rt.cwd)) {
-    try {
-      const auth = await importAuthJson(candidate, { baseUrl: rt.baseUrl, source: candidate })
-      return { auth, path: candidate }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
-  }
-  return null
 }
 
 function openBrowser(url) {
@@ -459,30 +447,319 @@ function openPath(target) {
   child.unref()
 }
 
-async function waitForAuthJson(rt, timeoutMs = 180000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const imported = await findAndImportAuthJson(rt)
-    if (imported) return imported
-    await new Promise((resolve) => setTimeout(resolve, 1200))
+function decodeCallbackPayload(value = '') {
+  const text = String(value || '').trim()
+  if (!text) return null
+  const direct = safeParseJson(text)
+  if (direct) return direct
+  try {
+    const normalized = text.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`
+    return safeParseJson(Buffer.from(padded, 'base64').toString('utf8'))
+  } catch {
+    return null
   }
-  return null
+}
+
+function callbackPayloadFrom(url, body = {}) {
+  const payload = decodeCallbackPayload(url.searchParams.get('auth') || url.searchParams.get('payload') || '')
+    || decodeCallbackPayload(body.auth || body.payload || '')
+    || {}
+  return {
+    ...payload,
+    ...body,
+    apiKey: body.apiKey
+      || body.key
+      || body.token
+      || body.secret
+      || body.access_token
+      || url.searchParams.get('apiKey')
+      || url.searchParams.get('key')
+      || url.searchParams.get('token')
+      || url.searchParams.get('secret')
+      || url.searchParams.get('access_token')
+      || payload.apiKey
+      || payload.key
+      || payload.token
+      || payload.secret
+      || '',
+    baseUrl: body.baseUrl || url.searchParams.get('baseUrl') || payload.baseUrl || '',
+    profile: body.profile || payload.profile || null,
+  }
+}
+
+async function readRequestJson(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > 1024 * 1024) throw new Error('Callback payload is too large.')
+    chunks.push(chunk)
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (!text) return {}
+  return safeParseJson(text) || Object.fromEntries(new URLSearchParams(text))
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function authCallbackHtml({ ok = true, title = '', message = '', detail = '', autoClose = false } = {}) {
+  const safeTitle = escapeHtml(title || (ok ? 'Aillive CLI authenticated' : 'Aillive CLI auth failed'))
+  const safeMessage = escapeHtml(message || (ok ? 'Saving your local credentials' : 'The login callback could not be completed'))
+  const safeDetail = escapeHtml(detail)
+  const closeScript = autoClose
+    ? `
+      setTimeout(() => {
+        document.body.classList.add('done')
+        document.querySelector('[data-state]').textContent = 'Saved. Closing browser...'
+      }, 650)
+      setTimeout(() => {
+        window.open('', '_self')
+        window.close()
+      }, 1100)
+      setTimeout(() => {
+        document.querySelector('[data-fallback]').hidden = false
+      }, 2200)
+    `
+    : ''
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #101418;
+      --panel: #161c22;
+      --text: #f5f7fa;
+      --muted: #a8b3bf;
+      --accent: #37d67a;
+      --line: #26313b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top left, rgba(55, 214, 122, 0.18), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(28rem, calc(100vw - 2rem));
+      padding: 2rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.28);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .mark {
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 1.4rem rgba(55, 214, 122, 0.75);
+    }
+    h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .auth-dots {
+      display: inline-flex;
+      gap: 0.28rem;
+      margin-left: 0.18rem;
+      vertical-align: 0.05em;
+    }
+    .auth-dots i {
+      width: 0.36rem;
+      height: 0.36rem;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1s infinite ease-in-out;
+    }
+    .auth-dots i:nth-child(2) { animation-delay: 0.14s; }
+    .auth-dots i:nth-child(3) { animation-delay: 0.28s; }
+    .detail {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.86rem;
+      word-break: break-word;
+    }
+    .fallback {
+      margin-top: 1rem;
+      font-size: 0.82rem;
+    }
+    body.done .auth-dots i { animation-duration: 0.55s; }
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.28; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-0.22rem); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="mark"></span><span>Aillive Code</span></div>
+    <h1>${safeTitle}</h1>
+    <p><span data-state>${safeMessage}</span><span class="auth-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
+    ${safeDetail ? `<p class="detail">${safeDetail}</p>` : ''}
+    ${autoClose ? '<p class="fallback" data-fallback hidden>If this tab stays open, your browser blocked automatic closing and you can close it manually.</p>' : ''}
+  </main>
+  <script>${closeScript}</script>
+</body>
+</html>`
+}
+
+export async function startCliAuthCallbackServer(rt = {}, options = {}) {
+  const state = options.state || crypto.randomBytes(16).toString('hex')
+  const timeoutMs = Number(options.timeoutMs || 180000)
+  let settled = false
+  let closed = false
+  let resolveWait
+  let rejectWait
+  const wait = new Promise((resolve, reject) => {
+    resolveWait = resolve
+    rejectWait = reject
+  })
+  let server
+  const closeServer = () => {
+    if (closed || !server) return
+    closed = true
+    server.close(() => {})
+  }
+  server = http.createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
+      if (!['/', '/callback', '/auth/callback', '/cli/auth'].includes(requestUrl.pathname)) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Not found')
+        return
+      }
+      const body = req.method === 'POST' ? await readRequestJson(req) : {}
+      const requestState = requestUrl.searchParams.get('state') || body.state || ''
+      if (requestState !== state) {
+        res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Invalid Aillive CLI auth state.')
+        return
+      }
+      const payload = callbackPayloadFrom(requestUrl, body)
+      const auth = await saveAuth({
+        ...payload,
+        baseUrl: payload.baseUrl || rt.baseUrl || DEFAULT_BASE_URL,
+        source: 'browser callback',
+      })
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(authCallbackHtml({
+        ok: true,
+        title: 'Aillive CLI authenticated',
+        message: 'Credentials saved. Preparing your terminal session',
+        detail: `auth.json was written to ${AUTH_FILE}`,
+        autoClose: true,
+      }))
+      if (!settled) {
+        settled = true
+        resolveWait({ auth, path: AUTH_FILE, source: 'browser callback' })
+      }
+      closeServer()
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(authCallbackHtml({
+        ok: false,
+        title: 'Aillive CLI auth failed',
+        message: 'The callback could not save credentials',
+        detail: error.message,
+      }))
+      if (!settled) {
+        settled = true
+        rejectWait(error)
+      }
+      closeServer()
+    }
+  })
+  server.on('error', (error) => {
+    if (!settled) {
+      settled = true
+      rejectWait(error)
+    }
+  })
+  await new Promise((resolve, reject) => {
+    server.listen(0, '127.0.0.1', resolve)
+    server.once('error', reject)
+  })
+  const address = server.address()
+  const timer = setTimeout(() => {
+    if (!settled) {
+      settled = true
+      resolveWait(null)
+      closeServer()
+    }
+  }, timeoutMs)
+  return {
+    state,
+    url: `http://127.0.0.1:${address.port}/callback`,
+    wait: wait.finally(() => clearTimeout(timer)),
+    close: () => {
+      clearTimeout(timer)
+      if (!settled) {
+        settled = true
+        resolveWait(null)
+      }
+      closeServer()
+    },
+  }
 }
 
 async function beginWebAuthFlow(rt, { wait = true } = {}) {
   const useColor = canUseColor(rt.color)
-  const loginUrl = cliAuthLoginUrl(rt)
-  printAuthFlowCard(rt, loginUrl)
+  let callback = null
+  if (wait) {
+    try {
+      callback = await startCliAuthCallbackServer(rt)
+    } catch (error) {
+      throw new Error(`AUTH_CALLBACK_UNAVAILABLE: could not start local browser callback. ${error.message}`)
+    }
+  }
+  const loginUrl = cliAuthLoginUrl(rt, callback)
+  printAuthFlowCard(rt, loginUrl, callback?.url || '')
   try {
     openBrowser(loginUrl)
   } catch (error) {
     if (!rt.json) console.log(color.yellow(`Open this URL manually: ${loginUrl}`, useColor))
   }
   if (!wait) return null
-  if (!rt.json) console.log(color.yellow('Waiting for auth.json... keep this terminal open.', useColor))
-  const imported = await waitForAuthJson(rt)
+  if (!rt.json) console.log(color.yellow(`Waiting for browser callback to write ${AUTH_FILE}... keep this terminal open.`, useColor))
+  const imported = await (callback?.wait || Promise.resolve(null)).finally(() => callback?.close())
   if (!imported) {
-    throw new Error(`AUTH_TIMEOUT: save the downloaded auth.json to ${AUTH_FILE}, then run the command again.`)
+    throw new Error(`AUTH_TIMEOUT: login callback did not arrive, so ${AUTH_FILE} was not written.`)
   }
   if (!rt.json) {
     console.log(color.green(`Authenticated from ${imported.path}. You can continue in this session.`, useColor))

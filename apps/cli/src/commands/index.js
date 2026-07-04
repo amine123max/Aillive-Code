@@ -41,8 +41,8 @@ export const COMMAND_GROUPS = [
       ['aillive login', 'Shortcut for auth login'],
       ['aillive status', 'Show local auth, project, and usage status'],
       ['aillive home', 'Show or open the local ~/.aillive directory'],
-      ['aillive auth login', 'Open browser login and save ~/.aillive/auth.json'],
-      ['aillive auth import auth.json', 'Import a downloaded auth.json file'],
+      ['aillive auth login', 'Open browser login; callback saves ~/.aillive/auth.json'],
+      ['aillive auth import auth.json', 'Import an existing auth.json file'],
       ['aillive install', 'Print terminal install commands'],
       ['aillive doctor', 'Check local config and API availability'],
     ],
@@ -112,7 +112,7 @@ export const SLASH_COMMAND_GROUPS = [
   {
     title: 'Identity',
     commands: [
-      ['/login', 'Browser login, then import ~/.aillive/auth.json'],
+      ['/login', 'Browser callback saves ~/.aillive/auth.json'],
       ['/doctor', 'Check local config and API readiness'],
       ['/usage', 'Fetch account usage'],
     ],

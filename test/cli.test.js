@@ -10,7 +10,7 @@ const testHome = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-home-'))
 process.env.AILLIVE_HOME = testHome
 test.after(() => fs.rm(testHome, { recursive: true, force: true }))
 
-const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, wordmarkForWidth } = await import('../src/index.js')
+const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, buildHelp, formatElapsed, generateCompletion, main, parseArgv, startCliAuthCallbackServer, wordmarkForWidth } = await import('../src/index.js')
 
 async function captureMain(args) {
   const lines = []
@@ -167,6 +167,38 @@ test('config set api-key writes auth.json instead of config apiKey', async () =>
   assert.equal(auth.apiKey, 'ail_test_secret')
   assert.equal(auth.type, 'aillive_cli_auth')
   assert.equal(config.apiKey, undefined)
+})
+
+test('auth browser callback writes auth.json under CLI home with animated auto-close page', async (t) => {
+  await fs.rm(path.join(testHome, 'auth.json'), { force: true })
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-callback-project-'))
+  t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
+
+  const callback = await startCliAuthCallbackServer(
+    { baseUrl: DEFAULT_BASE_URL, cwd: projectDir },
+    { state: 'callback-state-test', timeoutMs: 5000 },
+  )
+  t.after(() => callback.close())
+
+  const callbackUrl = new URL(callback.url)
+  callbackUrl.searchParams.set('state', callback.state)
+  callbackUrl.searchParams.set('apiKey', 'ail_callback_secret')
+  callbackUrl.searchParams.set('baseUrl', 'https://example.com/api/v1')
+
+  const response = await fetch(callbackUrl)
+  const html = await response.text()
+  const result = await callback.wait
+  const authFile = path.join(testHome, 'auth.json')
+  const auth = JSON.parse(await fs.readFile(authFile, 'utf8'))
+
+  assert.equal(response.status, 200)
+  assert.equal(result.path, authFile)
+  assert.equal(auth.apiKey, 'ail_callback_secret')
+  assert.equal(auth.baseUrl, 'https://example.com/api/v1')
+  assert.equal(auth.source, 'browser callback')
+  assert.match(html, /auth-dots/)
+  assert.match(html, /window\.close\(\)/)
+  await assert.rejects(() => fs.access(path.join(projectDir, 'auth.json')), { code: 'ENOENT' })
 })
 
 test('builds grouped help with project and completion commands', () => {

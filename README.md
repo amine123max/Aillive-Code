@@ -68,7 +68,7 @@ Useful slash commands:
 ```text
 /help        Show interactive commands
 /status      Show auth, model, context, home, authFile, workspace
-/login       Open browser login and wait for auth.json
+/login       Open browser login; callback saves ~/.aillive/auth.json
 /models      List server models
 /context     Show project context status
 /context on  Attach project memory for this terminal session
@@ -95,10 +95,9 @@ Recommended browser login:
 aillive auth login
 ```
 
-Manual auth import:
+The browser callback writes `~/.aillive/auth.json` automatically. Keep the terminal open until Aillive prints the authenticated message.
 
 ```bash
-aillive auth import auth.json
 aillive auth status
 aillive auth path
 ```
