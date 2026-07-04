@@ -180,7 +180,7 @@ test('windows browser launch preserves auth callback query params', () => {
   assert.match(launch.args[1], /&state=abc123$/)
 })
 
-test('auth browser callback writes auth.json under CLI home with animated auto-close page', async (t) => {
+test('auth browser callback writes auth.json under CLI home with blank auto-close page', async (t) => {
   await fs.rm(path.join(testHome, 'auth.json'), { force: true })
   const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-callback-project-'))
   t.after(() => fs.rm(projectDir, { recursive: true, force: true }))
@@ -207,8 +207,10 @@ test('auth browser callback writes auth.json under CLI home with animated auto-c
   assert.equal(auth.apiKey, 'ail_callback_secret')
   assert.equal(auth.baseUrl, 'https://example.com/api/v1')
   assert.equal(auth.source, 'browser callback')
-  assert.match(html, /auth-dots/)
+  assert.doesNotMatch(html, /Aillive CLI authenticated/)
+  assert.doesNotMatch(html, /auth-dots/)
   assert.match(html, /window\.close\(\)/)
+  assert.match(html, /about:blank/)
   await assert.rejects(() => fs.access(path.join(projectDir, 'auth.json')), { code: 'ENOENT' })
 })
 
@@ -239,8 +241,9 @@ test('auth browser callback accepts web form post payloads', async (t) => {
   assert.equal(result.source, 'browser callback')
   assert.equal(auth.apiKey, 'ail_form_post_secret')
   assert.equal(auth.baseUrl, 'https://form.example.com/api/v1')
-  assert.match(html, /Credentials saved/)
+  assert.doesNotMatch(html, /Credentials saved/)
   assert.match(html, /window\.close\(\)/)
+  assert.match(html, /about:blank/)
 })
 
 test('builds grouped help with project and completion commands', () => {

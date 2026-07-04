@@ -515,25 +515,40 @@ function escapeHtml(value = '') {
     .replaceAll("'", '&#39;')
 }
 
-function authCallbackHtml({ ok = true, title = '', message = '', detail = '', autoClose = false } = {}) {
+function authCallbackCloseHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: transparent; }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      window.open('', '_self')
+      window.close()
+      setTimeout(() => {
+        document.documentElement.style.background = 'transparent'
+        document.body.replaceChildren()
+        document.title = ''
+      }, 50)
+      setTimeout(() => {
+        location.replace('about:blank')
+      }, 180)
+    })()
+  </script>
+</body>
+</html>`
+}
+
+function authCallbackHtml({ ok = true, title = '', message = '', detail = '' } = {}) {
   const safeTitle = escapeHtml(title || (ok ? 'Aillive CLI authenticated' : 'Aillive CLI auth failed'))
   const safeMessage = escapeHtml(message || (ok ? 'Saving your local credentials' : 'The login callback could not be completed'))
   const safeDetail = escapeHtml(detail)
-  const closeScript = autoClose
-    ? `
-      setTimeout(() => {
-        document.body.classList.add('done')
-        document.querySelector('[data-state]').textContent = 'Saved. Closing browser...'
-      }, 650)
-      setTimeout(() => {
-        window.open('', '_self')
-        window.close()
-      }, 1100)
-      setTimeout(() => {
-        document.querySelector('[data-fallback]').hidden = false
-      }, 2200)
-    `
-    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -637,9 +652,7 @@ function authCallbackHtml({ ok = true, title = '', message = '', detail = '', au
     <h1>${safeTitle}</h1>
     <p><span data-state>${safeMessage}</span><span class="auth-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
     ${safeDetail ? `<p class="detail">${safeDetail}</p>` : ''}
-    ${autoClose ? '<p class="fallback" data-fallback hidden>If this tab stays open, your browser blocked automatic closing and you can close it manually.</p>' : ''}
   </main>
-  <script>${closeScript}</script>
 </body>
 </html>`
 }
@@ -683,13 +696,7 @@ export async function startCliAuthCallbackServer(rt = {}, options = {}) {
         source: 'browser callback',
       })
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-      res.end(authCallbackHtml({
-        ok: true,
-        title: 'Aillive CLI authenticated',
-        message: 'Credentials saved. Preparing your terminal session',
-        detail: `auth.json was written to ${AUTH_FILE}`,
-        autoClose: true,
-      }))
+      res.end(authCallbackCloseHtml())
       if (!settled) {
         settled = true
         resolveWait({ auth, path: AUTH_FILE, source: 'browser callback' })
