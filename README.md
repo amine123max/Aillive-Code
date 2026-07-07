@@ -27,6 +27,7 @@ Install from npm after the package is published:
 
 ```bash
 npm install -g @aillive/cli
+aillive install managed
 aillive --version
 aillive auth login
 aillive doctor
@@ -38,6 +39,14 @@ Run without installing:
 ```bash
 npx @aillive/cli chat "Hello Aillive"
 ```
+
+Install and manage the CLI package under your user Aillive directory:
+
+```bash
+npx @aillive/cli install managed
+```
+
+This creates `~/.aillive/cli` for the package files and `~/.aillive/bin` for command shims. Add `~/.aillive/bin` to `PATH` when you want the managed copy to be the first `aillive` command found by your shell.
 
 Install directly from GitHub before npm publication:
 
@@ -127,6 +136,12 @@ Aillive Code stores user-level configuration under the computer user home direct
 
 ```text
 ~/.aillive/
+  bin/
+    aillive
+    aillive-code
+  cli/
+    node_modules/
+      @aillive/cli/
   auth.json
   config.json
   stats.json
@@ -255,6 +270,7 @@ After publish, users can install:
 
 ```bash
 npm install -g @aillive/cli
+aillive install managed
 npx @aillive/cli chat "Hello"
 ```
 

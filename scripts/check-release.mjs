@@ -114,6 +114,7 @@ for (const [file, text] of [['README.md', readme], ['README.zh.md', readmeZh]]) 
   assert(text.includes('npm run pack:smoke'), `${file} must document pack:smoke`)
   assert(text.includes('npm publish'), `${file} must document npm publish`)
   assert(text.includes('npm install -g @aillive/cli'), `${file} must document global install`)
+  assert(text.includes('aillive install managed'), `${file} must document managed install`)
 }
 
 assert(releaseWorkflow.includes('workflow_dispatch'), 'release workflow must be manually triggered')

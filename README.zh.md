@@ -27,6 +27,7 @@ npm 发布后可这样安装：
 
 ```bash
 npm install -g @aillive/cli
+aillive install managed
 aillive --version
 aillive auth login
 aillive doctor
@@ -38,6 +39,14 @@ aillive
 ```bash
 npx @aillive/cli chat "Hello Aillive"
 ```
+
+如果希望 CLI 程序本体也由用户目录统一管理，可以安装到 Aillive 托管目录：
+
+```bash
+npx @aillive/cli install managed
+```
+
+这会创建 `~/.aillive/cli` 存放包文件，并创建 `~/.aillive/bin` 存放命令 shim。把 `~/.aillive/bin` 加入 `PATH` 后，shell 会优先使用这个托管版本的 `aillive`。
 
 npm 发布前，可以直接从 GitHub 安装：
 
@@ -127,6 +136,12 @@ Aillive Code 会把用户级配置存放在电脑用户目录：
 
 ```text
 ~/.aillive/
+  bin/
+    aillive
+    aillive-code
+  cli/
+    node_modules/
+      @aillive/cli/
   auth.json
   config.json
   stats.json
@@ -237,6 +252,7 @@ npm adduser
 
 ```bash
 npm install -g @aillive/cli
+aillive install managed
 npx @aillive/cli chat "Hello"
 ```
 

@@ -7,6 +7,7 @@ Aillive Code is structured as a publishable root npm package with workspace pack
 ## Commands
 
 - `aillive runtime status`
+- `aillive install managed`
 - `aillive provider status`
 - `aillive mcp status|list|call`
 - `aillive lsp status`
@@ -17,6 +18,8 @@ Aillive Code is structured as a publishable root npm package with workspace pack
 ## Config
 
 The architecture reads local user configuration from `~/.aillive` or `AILLIVE_HOME`. Workspace package boundaries are enforced by `scripts/verify-workspace.mjs`, release metadata by `scripts/check-release.mjs`, and package contents by `scripts/pack-smoke.mjs`.
+
+Managed installs place package files under `~/.aillive/cli/node_modules/@aillive/cli` and command shims under `~/.aillive/bin`. This keeps the npm-standard global entrypoint compatible while allowing users to keep the active Aillive runtime inside their user Aillive directory.
 
 ## Failure Modes
 
@@ -129,6 +132,8 @@ Existing local data remains under `~/.aillive`:
 
 ```text
 ~/.aillive/
+  bin/
+  cli/
   auth.json
   config.json
   stats.json

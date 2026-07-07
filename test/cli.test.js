@@ -10,7 +10,7 @@ const testHome = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-home-'))
 process.env.AILLIVE_HOME = testHome
 test.after(() => fs.rm(testHome, { recursive: true, force: true }))
 
-const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, browserOpenCommand, buildHelp, formatElapsed, generateCompletion, main, parseArgv, startCliAuthCallbackServer, wordmarkForWidth } = await import('../src/index.js')
+const { COMMAND_MODULES, DEFAULT_BASE_URL, SLASH_COMMAND_GROUPS, VERSION, browserOpenCommand, buildHelp, formatElapsed, generateCompletion, main, managedInstallPaths, parseArgv, startCliAuthCallbackServer, wordmarkForWidth, writeManagedInstallShims } = await import('../src/index.js')
 
 async function captureMain(args) {
   const lines = []
@@ -147,6 +147,21 @@ test('home command reports the CLI user directory', async () => {
   assert.equal(payload.files.sessions, true)
 })
 
+test('managed install paths and shims stay under the CLI home', async (t) => {
+  const managedHome = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-managed-home-'))
+  t.after(() => fs.rm(managedHome, { recursive: true, force: true }))
+
+  const paths = managedInstallPaths(managedHome)
+  const shims = await writeManagedInstallShims(paths, 'win32')
+  const cmdShim = await fs.readFile(path.join(paths.binDir, 'aillive.cmd'), 'utf8')
+
+  assert.equal(paths.home, path.resolve(managedHome))
+  assert.equal(paths.packageDir, path.join(paths.managedRoot, 'node_modules', '@aillive', 'cli'))
+  assert.equal(paths.binDir, path.join(paths.home, 'bin'))
+  assert.equal(shims.includes(path.join(paths.binDir, 'aillive.cmd')), true)
+  assert.match(cmdShim, /node "%~dp0\.\.\\cli\\node_modules\\@aillive\\cli\\src\\index\.js" %\*/)
+})
+
 test('config set api-key writes auth.json instead of config apiKey', async () => {
   await fs.rm(path.join(testHome, 'auth.json'), { force: true })
   await fs.rm(path.join(testHome, 'config.json'), { force: true })
@@ -252,6 +267,7 @@ test('builds grouped help with project and completion commands', () => {
   assert.match(help, /aillive agent run/)
   assert.match(help, /aillive agent verify/)
   assert.match(help, /aillive home/)
+  assert.match(help, /aillive install managed/)
   assert.match(help, /--project/)
   assert.match(help, /--offline/)
   assert.match(help, /--verify/)

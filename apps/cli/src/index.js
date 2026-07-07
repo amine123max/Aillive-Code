@@ -221,6 +221,7 @@ export function buildHelp(enabled = true) {
   sections.push('')
   sections.push(color.bold('Examples', useColor))
   sections.push('  aillive setup')
+  sections.push('  aillive install managed')
   sections.push('  aillive chat --stream "写一个 CLI 发布 checklist"')
   sections.push('  aillive init && aillive run --project "总结这个项目"')
   sections.push('  aillive completions powershell')
@@ -450,6 +451,152 @@ function openPath(target) {
   const command = process.platform === 'win32' ? 'explorer.exe' : (process.platform === 'darwin' ? 'open' : 'xdg-open')
   const child = spawn(command, [target], { detached: true, stdio: 'ignore', shell: false })
   child.unref()
+}
+
+export function managedInstallPaths(home = CONFIG_DIR) {
+  const root = path.resolve(home)
+  const managedRoot = path.join(root, 'cli')
+  const binDir = path.join(root, 'bin')
+  return {
+    home: root,
+    managedRoot,
+    packageDir: path.join(managedRoot, 'node_modules', '@aillive', 'cli'),
+    nodeBinDir: path.join(managedRoot, 'node_modules', '.bin'),
+    binDir,
+  }
+}
+
+function managedInstallEntry(platform = process.platform) {
+  return platform === 'win32'
+    ? '..\\cli\\node_modules\\@aillive\\cli\\src\\index.js'
+    : '../cli/node_modules/@aillive/cli/src/index.js'
+}
+
+function windowsCmdShim() {
+  return [
+    '@ECHO OFF',
+    'SETLOCAL',
+    `node "%~dp0${managedInstallEntry('win32')}" %*`,
+    '',
+  ].join('\r\n')
+}
+
+function windowsPowerShellShim() {
+  return [
+    '$script = Join-Path $PSScriptRoot "..\\cli\\node_modules\\@aillive\\cli\\src\\index.js"',
+    '& node $script @args',
+    'exit $LASTEXITCODE',
+    '',
+  ].join('\r\n')
+}
+
+function unixShim() {
+  return [
+    '#!/bin/sh',
+    'SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+    `exec node "$SCRIPT_DIR/${managedInstallEntry('linux')}" "$@"`,
+    '',
+  ].join('\n')
+}
+
+export async function writeManagedInstallShims(paths = managedInstallPaths(), platform = process.platform) {
+  await ensureDir(paths.binDir)
+  const names = ['aillive', 'aillive-code']
+  const written = []
+  if (platform === 'win32') {
+    for (const name of names) {
+      const cmdFile = path.join(paths.binDir, `${name}.cmd`)
+      const ps1File = path.join(paths.binDir, `${name}.ps1`)
+      await fs.writeFile(cmdFile, windowsCmdShim(), 'utf8')
+      await fs.writeFile(ps1File, windowsPowerShellShim(), 'utf8')
+      written.push(cmdFile, ps1File)
+    }
+    return written
+  }
+  for (const name of names) {
+    const file = path.join(paths.binDir, name)
+    await fs.writeFile(file, unixShim(), { encoding: 'utf8', mode: 0o755 })
+    await fs.chmod(file, 0o755)
+    written.push(file)
+  }
+  return written
+}
+
+function isManagedInstall(parsed) {
+  return parsed.subcommand === 'managed' || parsed.args.includes('--managed')
+}
+
+function managedInstallSpec(parsed, rt) {
+  const args = parsed.args.filter((item) => item !== 'managed' && item !== '--managed')
+  const raw = String(args[0] || process.env.AILLIVE_CLI_INSTALL_SPEC || `@aillive/cli@${VERSION}`).trim()
+  if (!raw) return `@aillive/cli@${VERSION}`
+  const looksLocal = raw === '.' || raw === '..' || raw.startsWith('./') || raw.startsWith('../') || path.isAbsolute(raw)
+  return looksLocal ? path.resolve(rt.cwd, raw) : raw
+}
+
+function npmCommand(platform = process.platform) {
+  return platform === 'win32' ? 'npm.cmd' : 'npm'
+}
+
+async function npmInvocation() {
+  const candidates = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ].filter(Boolean)
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return { command: process.execPath, args: [candidate] }
+  }
+  return { command: npmCommand(), args: [] }
+}
+
+async function runProcess(command, args, rt) {
+  const json = Boolean(rt.json)
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: rt.cwd,
+      env: process.env,
+      shell: false,
+      windowsHide: true,
+      stdio: json ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    })
+    const stdout = []
+    const stderr = []
+    if (json) {
+      child.stdout?.on('data', (chunk) => stdout.push(Buffer.from(chunk)))
+      child.stderr?.on('data', (chunk) => stderr.push(Buffer.from(chunk)))
+    }
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+        })
+        return
+      }
+      const detail = Buffer.concat(stderr).toString('utf8').trim()
+      reject(new Error(detail || `${command} exited with code ${code}`))
+    })
+  })
+}
+
+async function installManagedPackage(paths, spec, rt) {
+  await ensureDir(paths.managedRoot)
+  const registry = String(process.env.AILLIVE_NPM_REGISTRY || 'https://registry.npmjs.org').trim()
+  const npm = await npmInvocation()
+  const args = [
+    'install',
+    '--prefix',
+    paths.managedRoot,
+    '--omit=dev',
+    '--no-audit',
+    '--fund=false',
+    '--registry',
+    registry,
+    spec,
+  ]
+  return runProcess(npm.command, [...npm.args, ...args], rt)
 }
 
 function decodeCallbackPayload(value = '') {
@@ -1812,17 +1959,62 @@ async function cmdInteractive(parsed) {
 
 async function cmdInstall(parsed) {
   const rt = await runtime(parsed.global)
+  if (isManagedInstall(parsed)) {
+    const paths = managedInstallPaths(CONFIG_DIR)
+    const spec = managedInstallSpec(parsed, rt)
+    if (!rt.json) {
+      printBrand(rt, 'Aillive Managed Install')
+      printPanel('Install Target', [
+        `Package: ${spec}`,
+        `Home: ${paths.home}`,
+        `CLI: ${paths.packageDir}`,
+        `Bin: ${paths.binDir}`,
+      ].join('\n'), rt)
+    }
+    await installManagedPackage(paths, spec, rt)
+    const shims = await writeManagedInstallShims(paths)
+    const entry = path.join(paths.packageDir, 'src', 'index.js')
+    if (!(await exists(entry))) throw new Error(`Managed install did not create ${entry}.`)
+    if (rt.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        package: spec,
+        home: paths.home,
+        cli: paths.packageDir,
+        bin: paths.binDir,
+        shims,
+      }, null, 2))
+      return
+    }
+    printPanel('Managed Install Complete', [
+      `CLI package: ${paths.packageDir}`,
+      `Command shims: ${paths.binDir}`,
+      '',
+      'Add this directory to PATH if it is not already available:',
+      `  ${paths.binDir}`,
+      '',
+      'Then run:',
+      '  aillive --version',
+    ].join('\n'), rt)
+    return
+  }
   printBrand(rt, 'Aillive Install')
   printPanel('Install From npm', formatCommandBlock([
     'npm install -g @aillive/cli',
+    'aillive install managed',
     'aillive --version',
     'aillive setup',
     'aillive doctor',
     'aillive',
   ]), rt)
+  printPanel('Managed Install Under ~/.aillive', formatCommandBlock([
+    'npx @aillive/cli install managed',
+    'aillive install managed',
+  ]), rt)
   printPanel('Install From This Folder', formatCommandBlock([
     'cd "Aillive CLI"',
     'npm install -g .',
+    'aillive install managed .',
     'aillive --help',
   ]), rt)
   printPanel('One-shot npx', formatCommandBlock([

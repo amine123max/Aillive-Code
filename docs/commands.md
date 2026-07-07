@@ -10,6 +10,7 @@ Document the public Aillive CLI command surface for users, scripts, and maintain
 - `aillive ask|chat|run`: call chat or project-aware execution.
 - `aillive agent plan|run|verify|resume`: run offline agent planning, execution, verification, and checkpoint resume.
 - `aillive provider|mcp|lsp|git|memory status`: inspect subsystem readiness.
+- `aillive install managed`: install the active CLI package and command shims under `~/.aillive`.
 - `aillive mcp list|call`: list configured tools or call the built-in/mock tool contract.
 - `aillive git diff --summary|checkpoint`: inspect read-only Git evidence.
 - `aillive config|auth|home|context|session|stats|usage|openclaw|admin|doctor|completions`: manage local Aillive workflows.
