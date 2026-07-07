@@ -13,8 +13,8 @@ async function readJson(file) {
 test('root package declares workspace CLI architecture', async () => {
   const pkg = await readJson('package.json')
   assert.deepEqual(pkg.workspaces, ['apps/*', 'packages/*'])
-  assert.equal(pkg.bin.aillive, './apps/cli/src/index.js')
-  assert.equal(pkg.bin['aillive-code'], './apps/cli/src/index.js')
+  assert.equal(pkg.bin.aillive, 'src/index.js')
+  assert.equal(pkg.bin['aillive-code'], 'src/index.js')
   assert.equal(pkg.files.includes('apps/cli/src'), true)
   assert.equal(pkg.files.includes('packages/*/src/**'), true)
   assert.equal(pkg.files.includes('packages/*/package.json'), true)

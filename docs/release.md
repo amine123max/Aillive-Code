@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the release gate for the publishable `aillive-code` npm package and keep accidental npm publishing opt-in.
+Define the release gate for the publishable `@aillive/cli` npm package and keep accidental npm publishing opt-in.
 
 ## Commands
 

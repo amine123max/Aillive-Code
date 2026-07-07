@@ -103,7 +103,7 @@ async function startMockApi() {
   }
 }
 
-const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-code-pack-smoke-'))
+const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-pack-smoke-'))
 
 try {
   const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const packages = [
-  ['apps/cli', '@aillive/cli'],
+  ['apps/cli', '@aillive/cli-app'],
   ['packages/core', '@aillive/core'],
   ['packages/tui', '@aillive/tui'],
   ['packages/provider', '@aillive/provider'],
@@ -18,7 +18,7 @@ const packages = [
 
 const internalNames = new Set(packages.map(([, name]) => name))
 const allowedInternalDeps = new Map([
-  ['@aillive/cli', new Set([...internalNames].filter((name) => name !== '@aillive/cli'))],
+  ['@aillive/cli-app', new Set([...internalNames].filter((name) => name !== '@aillive/cli-app'))],
   ['@aillive/core', new Set()],
   ['@aillive/tui', new Set(['@aillive/core'])],
   ['@aillive/provider', new Set(['@aillive/core'])],
@@ -66,8 +66,8 @@ const rootPkg = await readJson(path.join(root, 'package.json'))
 assert(Array.isArray(rootPkg.workspaces), 'root package.json must define workspaces')
 assert(rootPkg.workspaces.includes('apps/*'), 'root workspaces must include apps/*')
 assert(rootPkg.workspaces.includes('packages/*'), 'root workspaces must include packages/*')
-assert(rootPkg.bin?.aillive === './apps/cli/src/index.js', 'root bin.aillive must point at apps/cli/src/index.js')
-assert(rootPkg.bin?.['aillive-code'] === './apps/cli/src/index.js', 'root bin.aillive-code must point at apps/cli/src/index.js')
+assert(rootPkg.bin?.aillive === 'src/index.js', 'root bin.aillive must point at src/index.js')
+assert(rootPkg.bin?.['aillive-code'] === 'src/index.js', 'root bin.aillive-code must point at src/index.js')
 assert(rootPkg.files?.includes('apps/cli/src'), 'root files must include apps/cli/src')
 assert(rootPkg.files?.includes('packages/*/src/**'), 'root files must include package source files')
 assert(rootPkg.files?.includes('packages/*/package.json'), 'root files must include package manifests')

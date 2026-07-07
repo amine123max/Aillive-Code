@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Aillive Code is structured as a publishable root npm package with workspace packages underneath it. The root package keeps the public npm name `aillive-code` and exposes the installed commands `aillive` and `aillive-code`.
+Aillive Code is structured as a publishable root npm package with workspace packages underneath it. The root package keeps the public npm name `@aillive/cli` and exposes the installed commands `aillive` and `aillive-code`.
 
 ## Commands
 
@@ -68,7 +68,7 @@ These commands must work without real MCP servers, language servers, or API requ
 
 ## Compatibility
 
-The root `src/index.js` file is a compatibility shim. The real executable entrypoint lives at `apps/cli/src/index.js`, and the root package `bin` points to that app entrypoint. Existing tests and imports that use `src/index.js` continue to work while future code moves into packages.
+The root `src/index.js` file is the published bin shim. The real executable entrypoint lives at `apps/cli/src/index.js`, and the root package `bin` points to the shim so npm publishing keeps stable command metadata. Existing tests and imports that use `src/index.js` continue to work while future code moves into packages.
 
 ## Batch 2 Extraction
 

@@ -36,7 +36,7 @@ async function runNpm(args, options = {}) {
 }
 
 test('packed tarball runs through npx and calls chat mock', async (t) => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-code-npx-'))
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aillive-cli-npx-'))
   t.after(() => fs.rm(tempDir, { recursive: true, force: true }))
 
   let sawChat = false

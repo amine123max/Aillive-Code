@@ -1,5 +1,5 @@
 {
-  "name": "@aillive/cli",
+  "name": "@aillive/cli-app",
   "version": "0.1.0",
   "private": true,
   "description": "Aillive Code CLI app package.",

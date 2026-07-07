@@ -69,14 +69,14 @@ const requiredDocs = [
   'docs/release.md',
 ]
 
-assert(pkg.name === 'aillive-code', 'package name must stay aillive-code')
+assert(pkg.name === '@aillive/cli', 'package name must stay @aillive/cli')
 assert(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version), 'package version must be semver')
 assert(pkg.type === 'module', 'root package must be ESM')
 assert(pkg.license === 'MIT', 'license must be MIT')
 assert(pkg.engines?.node === '>=18', 'Node engine must be >=18')
 assert(pkg.publishConfig?.access === 'public', 'publishConfig.access must be public')
-assert(pkg.bin?.aillive === './apps/cli/src/index.js', 'bin.aillive must point at apps/cli/src/index.js')
-assert(pkg.bin?.['aillive-code'] === './apps/cli/src/index.js', 'bin.aillive-code must point at apps/cli/src/index.js')
+assert(pkg.bin?.aillive === 'src/index.js', 'bin.aillive must point at src/index.js')
+assert(pkg.bin?.['aillive-code'] === 'src/index.js', 'bin.aillive-code must point at src/index.js')
 assert(arraysEqual(pkg.files || [], expectedFiles), 'package files allowlist must match release policy')
 
 for (const script of requiredScripts) {
@@ -98,8 +98,8 @@ await Promise.all([
   ...requiredDocs.map((file) => assertExists(file)),
 ])
 
-const cliEntry = await readText('apps/cli/src/index.js')
-assert(cliEntry.startsWith('#!/usr/bin/env node'), 'CLI bin entrypoint must keep node shebang')
+const cliEntry = await readText('src/index.js')
+assert(cliEntry.startsWith('#!/usr/bin/env node'), 'CLI bin shim must keep node shebang')
 
 const changelog = await readText('CHANGELOG.md')
 const versionHeading = new RegExp(`^## ${pkg.version.replace(/\./g, '\\.')} - \\d{4}-\\d{2}-\\d{2}$`, 'm')
@@ -113,7 +113,7 @@ for (const [file, text] of [['README.md', readme], ['README.zh.md', readmeZh]]) 
   assert(text.includes('npm run check:release'), `${file} must document check:release`)
   assert(text.includes('npm run pack:smoke'), `${file} must document pack:smoke`)
   assert(text.includes('npm publish'), `${file} must document npm publish`)
-  assert(text.includes('npm install -g aillive-code'), `${file} must document global install`)
+  assert(text.includes('npm install -g @aillive/cli'), `${file} must document global install`)
 }
 
 assert(releaseWorkflow.includes('workflow_dispatch'), 'release workflow must be manually triggered')

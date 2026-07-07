@@ -53,7 +53,7 @@ jobs:
       - name: Upload npm tarball artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aillive-code-npm-tarball
+          name: aillive-cli-npm-tarball
           path: dist/*.tgz
           if-no-files-found: error
 

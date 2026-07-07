@@ -14,7 +14,7 @@
 
 Aillive Code is a standalone npm CLI for Aillive. It brings Aillive chat, project context, OpenAI-compatible APIs, OpenClaw tasks, usage queries, local sessions, and a polished terminal interface into one command.
 
-This repository is designed to be published as the npm package `aillive-code`. The installed commands are:
+This repository is designed to be published as the npm package `@aillive/cli`. The installed commands are:
 
 - `aillive`
 - `aillive-code`
@@ -26,7 +26,7 @@ The product structure is inspired by mature AI coding CLIs: quick install, brows
 Install from npm after the package is published:
 
 ```bash
-npm install -g aillive-code
+npm install -g @aillive/cli
 aillive --version
 aillive auth login
 aillive doctor
@@ -36,7 +36,7 @@ aillive
 Run without installing:
 
 ```bash
-npx aillive-code chat "Hello Aillive"
+npx @aillive/cli chat "Hello Aillive"
 ```
 
 Install directly from GitHub before npm publication:
@@ -194,7 +194,7 @@ Global options:
 
 ## Developer Workflow
 
-Aillive Code is now organized as an npm workspace while the root package still publishes the `aillive-code` npm artifact. The executable app lives in `apps/cli`, and the root `src/index.js` remains a compatibility shim for older imports and tests.
+Aillive Code is now organized as an npm workspace while the root package publishes the `@aillive/cli` npm artifact. The executable app lives in `apps/cli`, and the root `src/index.js` remains a compatibility shim for older imports and tests.
 
 ```text
 apps/cli              CLI app and command entrypoint
@@ -233,7 +233,7 @@ npm run publish:check
 
 ## Publishing
 
-The npm package name is `aillive-code`.
+The npm package name is `@aillive/cli`.
 
 Before publishing:
 
@@ -254,8 +254,8 @@ npm adduser
 After publish, users can install:
 
 ```bash
-npm install -g aillive-code
-npx aillive-code chat "Hello"
+npm install -g @aillive/cli
+npx @aillive/cli chat "Hello"
 ```
 
 ## GitHub Release Checklist
